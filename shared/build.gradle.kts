@@ -19,6 +19,7 @@ kotlin {
 
 dependencies {
     api(libs.kotlinx.serialization.core)
+    api(libs.kotlinx.coroutines.core)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.serialization.json)
