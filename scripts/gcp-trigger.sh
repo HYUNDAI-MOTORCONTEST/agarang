@@ -11,7 +11,7 @@ usage() {
 사용법: scripts/gcp-trigger.sh [--check | --build] [--branch 이름] [--start-vm]
 
   --check      VM 접속·원격 저장소·빌드 도구만 확인한다. 소스를 갱신하지 않는다.
-  --build      원격 브랜치를 fast-forward로 갱신하고 앱·서버·공용을 빌드한다(기본).
+  --build      푸시된 커밋으로 원격 브랜치를 갱신하고 앱·서버·공용을 빌드·테스트한다(기본).
   --branch     빌드할 브랜치(기본 로컬의 현재 작업 브랜치).
   --start-vm   중지된 VM을 시작한다. VM 실행 중에는 사용 요금이 발생한다.
 
@@ -49,11 +49,29 @@ done
 [[ "$MODE" != check || "$START_VM" -eq 0 ]] || die "--check와 --start-vm은 함께 사용할 수 없습니다."
 require_cmd gcloud "Google Cloud CLI를 설치하고 gcloud init을 실행하세요."
 require_cmd git "Git을 설치하세요."
+CURRENT_BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD || true)"
 if [[ -z "$BRANCH" ]]; then
-  BRANCH="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD)" ||
-    die "현재 HEAD가 브랜치에 연결돼 있지 않습니다. --branch로 지정하세요."
+  [[ -n "$CURRENT_BRANCH" ]] || die "현재 HEAD가 브랜치에 연결돼 있지 않습니다. --branch로 지정하세요."
+  BRANCH="$CURRENT_BRANCH"
 fi
 git check-ref-format --branch "$BRANCH" >/dev/null || die "유효하지 않은 브랜치 이름입니다."
+
+EXPECTED_COMMIT=""
+if [[ "$MODE" == build ]]; then
+  if [[ "$BRANCH" == "$CURRENT_BRANCH" ]]; then
+    [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] ||
+      die "로컬 변경 사항이 있습니다. 테스트할 변경을 커밋·푸시한 뒤 다시 실행하세요."
+  fi
+  EXPECTED_COMMIT="$(git -C "$REPO_ROOT" -c 'url.https://github.com/.insteadOf=git@github.com:' \
+    ls-remote --exit-code origin "refs/heads/$BRANCH" | cut -f1)" ||
+    die "GitHub에서 $BRANCH 브랜치를 확인하지 못했습니다. 푸시 여부와 접근 권한을 확인하세요."
+  [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40,64}$ ]] || die "원격 커밋 SHA를 확인하지 못했습니다."
+  if [[ "$BRANCH" == "$CURRENT_BRANCH" ]]; then
+    [[ "$(git -C "$REPO_ROOT" rev-parse HEAD)" == "$EXPECTED_COMMIT" ]] ||
+      die "로컬 HEAD와 GitHub 브랜치가 다릅니다. 먼저 브랜치를 갱신하거나 변경을 푸시하세요."
+  fi
+  printf '빌드 요청: %s (%s)\n' "$EXPECTED_COMMIT" "$BRANCH"
+fi
 
 PROJECT="${HMG_GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 ZONE="${HMG_GCP_ZONE:-$(gcloud config get-value compute/zone 2>/dev/null)}"
@@ -74,7 +92,8 @@ set -euo pipefail
 mode="$1"
 branch="$2"
 repo_dir="${3:-$HOME/workspaces/HYUNDAI_MOTOR_CONTEST}"
-[[ -d "$repo_dir/.git" ]] || { printf '원격 Git 저장소가 없습니다: %s\n' "$repo_dir" >&2; exit 1; }
+expected_commit="${4:-}"
+[[ -e "$repo_dir/.git" ]] || { printf '원격 Git 저장소가 없습니다: %s\n' "$repo_dir" >&2; exit 1; }
 cd "$repo_dir"
 git check-ref-format --branch "$branch" >/dev/null
 if [[ -f .dev/gcp-env.sh ]]; then source .dev/gcp-env.sh; fi
@@ -88,6 +107,8 @@ if [[ "$mode" == build ]]; then
   # 공개 GitHub 저장소는 HTTPS로 읽는다. SSH 키나 원격 origin 설정을 바꾸지 않는다.
   git -c 'url.https://github.com/.insteadOf=git@github.com:' fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch" ||
     { printf 'GitHub에서 %s 브랜치를 받지 못했습니다. 푸시 여부와 접근 권한을 확인하세요.\n' "$branch" >&2; exit 1; }
+  [[ -n "$expected_commit" && "$(git rev-parse "refs/remotes/origin/$branch")" == "$expected_commit" ]] ||
+    { printf '빌드 요청 후 GitHub 브랜치가 변경됐습니다. 로컬 브랜치를 확인하고 다시 실행하세요.\n' >&2; exit 1; }
   if [[ "$(git symbolic-ref --quiet --short HEAD || true)" != "$branch" ]]; then
     if git show-ref --verify --quiet "refs/heads/$branch"; then
       git switch "$branch"
@@ -96,6 +117,8 @@ if [[ "$mode" == build ]]; then
     fi
   fi
   git merge --ff-only "refs/remotes/origin/$branch"
+  [[ "$(git rev-parse HEAD)" == "$expected_commit" ]] ||
+    { printf '원격 작업 브랜치에 GitHub와 다른 커밋이 있습니다. 변경을 확인한 뒤 다시 실행하세요.\n' >&2; exit 1; }
 fi
 
 source scripts/_common.sh
@@ -116,7 +139,7 @@ fi
 if [[ ${#missing_sdk[@]} -gt 0 ]]; then
   die "SDK 패키지 없음: ${missing_sdk[*]}. VM 터미널에서 sdkmanager로 직접 설치하고 라이선스를 확인하세요."
 fi
-printf '소스: %s (%s)\n' "$(git rev-parse --short HEAD)" "$(git symbolic-ref --short HEAD)"
+printf '소스: %s (%s)\n' "$(git rev-parse HEAD)" "$(git branch --show-current)"
 printf 'JDK: %s / Android SDK: %s\n' "$(java_major "$JAVA_HOME")" "$compile_sdk"
 
 if [[ "$mode" == check ]]; then
@@ -124,12 +147,12 @@ if [[ "$mode" == check ]]; then
   exit 0
 fi
 
-./gradlew :frontend:app:assembleDebug :backend:build :shared:build -Pandroid.builder.sdkDownload=false 9>&-
+./gradlew :frontend:app:assembleDebug :frontend:app:testDebugUnitTest :backend:build :shared:build -Pandroid.builder.sdkDownload=false 9>&-
 printf 'APK: %s/frontend/app/build/outputs/apk/debug/app-debug.apk\n' "$repo_dir"
 REMOTE
 )"
 
-REMOTE_ARGS=(bash -c "$REMOTE_SCRIPT" -- "$MODE" "$BRANCH" "${HMG_GCP_REMOTE_DIR:-}")
+REMOTE_ARGS=(bash -c "$REMOTE_SCRIPT" -- "$MODE" "$BRANCH" "${HMG_GCP_REMOTE_DIR:-}" "$EXPECTED_COMMIT")
 if [[ -n "${HMG_GCP_RUN_AS:-}" ]]; then
   REMOTE_ARGS=(sudo -n -H -u "$HMG_GCP_RUN_AS" "${REMOTE_ARGS[@]}")
 fi

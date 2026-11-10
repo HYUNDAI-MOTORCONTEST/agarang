@@ -1,13 +1,25 @@
-# GCP에서 수동으로 빌드·테스트
+# 개인 GCP 개발·테스트 흐름
 
-로컬의 본인 작업 브랜치에서 코드를 수정하고 GitHub에 반영한 뒤, 필요할 때 로컬 명령으로 GCP에서 빌드한다.
+**로컬에서 개발 → 개인 브랜치에 커밋·푸시 → GCP에서 같은 커밋을 빌드·테스트**한다.
+GCP 작업 폴더는 푸시된 소스를 받아 검증하는 데 사용한다.
+개인 연결 정보는 `.dev/`에 두고 이 문서·스크립트는 개인 브랜치에서 관리한다. 팀원의 GCP 설정은 필요 없다.
 커밋·푸시는 사용자가 요청할 때만 진행한다. 이 스크립트는 커밋하거나 푸시하지 않는다.
+
+## 평소 작업 순서
+
+1. 로컬의 개인 작업 브랜치에서 앱·서버 코드를 수정한다.
+2. 변경 내용을 검토하고 필요한 파일만 커밋한 뒤 `git push`로 반영한다.
+3. `scripts/gcp-trigger.sh --build`로 푸시한 커밋을 GCP에서 빌드·테스트한다.
+4. 로그에 표시된 커밋 SHA와 테스트 결과를 확인하고, 수정이 필요하면 로컬에서 반복한다.
+
+로컬의 현재 브랜치에 미커밋·미푸시 변경이 있으면 빌드 요청을 중단한다.
+다른 브랜치를 `--branch 이름`으로 지정하면 해당 GitHub 브랜치의 커밋을 사용한다.
 
 ## 사용법
 
 ```bash
 scripts/gcp-trigger.sh --check          # SSH·원격 저장소·JDK·SDK 확인
-scripts/gcp-trigger.sh                  # 현재 작업 브랜치 동기화 → 앱 빌드 + 서버·공용 빌드·테스트
+scripts/gcp-trigger.sh --build          # 현재 작업 브랜치 동기화 → 앱 빌드·단위 테스트 + 서버·공용 빌드·테스트
 scripts/gcp-trigger.sh --start-vm       # 중지된 VM도 시작해서 같은 작업 실행
 scripts/gcp-trigger.sh --branch main    # main을 명시해서 빌드할 때
 ```
@@ -16,6 +28,8 @@ scripts/gcp-trigger.sh --branch main    # main을 명시해서 빌드할 때
 원격 작업 폴더가 깨끗하면 GitHub에서 해당 브랜치를 받은 뒤 자동으로 전환하고 fast-forward로 갱신한다.
 
 빌드는 **GitHub에 반영된 코드**를 사용한다. 로컬의 미커밋·미푸시 변경은 전송하지 않는다.
+요청 시점의 GitHub 커밋 SHA를 원격 동기화 후에도 확인한다. 요청 도중 GitHub 브랜치가 바뀌거나
+VM 브랜치에 미푸시 커밋이 있어 요청한 커밋과 달라지면 빌드하지 않는다.
 공개 GitHub 저장소는 HTTPS로 읽기 때문에 GCP에 GitHub SSH 키를 추가하지 않아도 된다.
 원격에 수정 사항이 있거나 브랜치가 서로 갈라졌으면 동기화를 중단한다.
 이 트리거로 실행한 빌드는 동일 작업 폴더당 한 번에 하나만 실행된다.
@@ -58,8 +72,9 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;37.0.0"
 ```
 
-실행하는 Gradle 태스크는 `:frontend:app:assembleDebug :backend:build :shared:build`다.
-앱 debug APK와 서버·공용 모듈 테스트 결과는 VM 작업 폴더의 각 `build/` 아래에 남는다.
+실행하는 Gradle 태스크는 `:frontend:app:assembleDebug :frontend:app:testDebugUnitTest :backend:build :shared:build`다.
+앱 debug APK와 각 모듈 테스트 결과는 VM 작업 폴더의 각 `build/` 아래에 남는다.
+앱 단위 테스트가 아직 없으면 해당 태스크는 `NO-SOURCE`로 표시된다.
 앱 설치·화면 조작·주행 제한 검증은 이 빌드 트리거와 별도로 실행한다.
 
 참고: [gcloud compute ssh](https://docs.cloud.google.com/sdk/gcloud/reference/compute/ssh),
