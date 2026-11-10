@@ -8,11 +8,12 @@ source "$SCRIPT_DIR/_common.sh"
 
 usage() {
   cat <<'USAGE'
-사용법: scripts/gcp-trigger.sh [--check | --build] [--branch 이름] [--start-vm]
+사용법: scripts/gcp-trigger.sh [--check | --build] [--branch 이름] [--jvm-only] [--start-vm]
 
   --check      VM 접속·원격 저장소·빌드 도구만 확인한다. 소스를 갱신하지 않는다.
   --build      푸시된 커밋으로 원격 브랜치를 갱신하고 앱·서버·공용을 빌드·테스트한다(기본).
   --branch     빌드할 브랜치(기본 로컬의 현재 작업 브랜치).
+  --jvm-only   Android SDK 점검·앱 태스크를 제외하고 서버·공용 모듈만 검증한다.
   --start-vm   중지된 VM을 시작한다. VM 실행 중에는 사용 요금이 발생한다.
 
 설정은 환경변수 또는 git에서 제외되는 .dev/gcp-trigger.env로 지정한다.
@@ -31,11 +32,13 @@ fi
 MODE=build
 BRANCH=""
 START_VM=0
+JVM_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check) MODE=check; shift ;;
     --build) MODE=build; shift ;;
     --start-vm) START_VM=1; shift ;;
+    --jvm-only) JVM_ONLY=1; shift ;;
     --branch)
       [[ $# -ge 2 && -n "$2" ]] || die "--branch 다음에 브랜치 이름을 지정하세요."
       BRANCH="$2"
@@ -93,6 +96,7 @@ mode="$1"
 branch="$2"
 repo_dir="${3:-$HOME/workspaces/HYUNDAI_MOTOR_CONTEST}"
 expected_commit="${4:-}"
+jvm_only="${5:-0}"
 [[ -e "$repo_dir/.git" ]] || { printf '원격 Git 저장소가 없습니다: %s\n' "$repo_dir" >&2; exit 1; }
 cd "$repo_dir"
 git check-ref-format --branch "$branch" >/dev/null
@@ -122,37 +126,45 @@ if [[ "$mode" == build ]]; then
 fi
 
 source scripts/_common.sh
-setup_android_env
 JAVA_HOME="$(find_java_home)" || die "JDK 21 이상이 필요합니다."
 export JAVA_HOME
 [[ "$(java_major "$JAVA_HOME")" -ge 21 ]] || die "앱·서버 전체 빌드에는 JDK 21 이상이 필요합니다."
-compile_sdk="$(sed -n 's/^android-compileSdk[[:space:]]*=[[:space:]]*"\([0-9.]*\)".*/\1/p' gradle/libs.versions.toml | head -1)"
-[[ -n "$compile_sdk" ]] || die "compileSdk 버전을 찾지 못했습니다."
-missing_sdk=()
-if [[ ! -f "$ANDROID_HOME/platforms/android-$compile_sdk/android.jar" && ! -f "$ANDROID_HOME/platforms/android-$compile_sdk.0/android.jar" ]]; then
-  missing_sdk+=("platform $compile_sdk")
-fi
-build_tools_version="${compile_sdk%%.*}.0.0"
-if [[ ! -x "$ANDROID_HOME/build-tools/$build_tools_version/aapt2" ]]; then
-  missing_sdk+=("build-tools $build_tools_version")
-fi
-if [[ ${#missing_sdk[@]} -gt 0 ]]; then
-  die "SDK 패키지 없음: ${missing_sdk[*]}. VM 터미널에서 sdkmanager로 직접 설치하고 라이선스를 확인하세요."
+if [[ "$jvm_only" != 1 ]]; then
+  setup_android_env
+  compile_sdk="$(sed -n 's/^android-compileSdk[[:space:]]*=[[:space:]]*"\([0-9.]*\)".*/\1/p' gradle/libs.versions.toml | head -1)"
+  [[ -n "$compile_sdk" ]] || die "compileSdk 버전을 찾지 못했습니다."
+  missing_sdk=()
+  if [[ ! -f "$ANDROID_HOME/platforms/android-$compile_sdk/android.jar" && ! -f "$ANDROID_HOME/platforms/android-$compile_sdk.0/android.jar" ]]; then
+    missing_sdk+=("platform $compile_sdk")
+  fi
+  build_tools_version="${compile_sdk%%.*}.0.0"
+  if [[ ! -x "$ANDROID_HOME/build-tools/$build_tools_version/aapt2" ]]; then
+    missing_sdk+=("build-tools $build_tools_version")
+  fi
+  if [[ ${#missing_sdk[@]} -gt 0 ]]; then
+    die "SDK 패키지 없음: ${missing_sdk[*]}. VM 터미널에서 sdkmanager로 직접 설치하고 라이선스를 확인하세요."
+  fi
+  printf 'JDK: %s / Android SDK: %s\n' "$(java_major "$JAVA_HOME")" "$compile_sdk"
+else
+  printf 'JDK: %s / 서버·공용 모듈 검증\n' "$(java_major "$JAVA_HOME")"
 fi
 printf '소스: %s (%s)\n' "$(git rev-parse HEAD)" "$(git branch --show-current)"
-printf 'JDK: %s / Android SDK: %s\n' "$(java_major "$JAVA_HOME")" "$compile_sdk"
 
 if [[ "$mode" == check ]]; then
   printf '원격 빌드 환경 확인 완료\n'
   exit 0
 fi
 
-./gradlew :frontend:app:assembleDebug :frontend:app:testDebugUnitTest :backend:build :shared:build -Pandroid.builder.sdkDownload=false 9>&-
-printf 'APK: %s/frontend/app/build/outputs/apk/debug/app-debug.apk\n' "$repo_dir"
+if [[ "$jvm_only" == 1 ]]; then
+  ./gradlew :backend:build :shared:build --configure-on-demand --console=plain -Pandroid.builder.sdkDownload=false 9>&-
+else
+  ./gradlew :frontend:app:assembleDebug :frontend:app:testDebugUnitTest :backend:build :shared:build --console=plain -Pandroid.builder.sdkDownload=false 9>&-
+  printf 'APK: %s/frontend/app/build/outputs/apk/debug/app-debug.apk\n' "$repo_dir"
+fi
 REMOTE
 )"
 
-REMOTE_ARGS=(bash -c "$REMOTE_SCRIPT" -- "$MODE" "$BRANCH" "${HMG_GCP_REMOTE_DIR:-}" "$EXPECTED_COMMIT")
+REMOTE_ARGS=(bash -c "$REMOTE_SCRIPT" -- "$MODE" "$BRANCH" "${HMG_GCP_REMOTE_DIR:-}" "$EXPECTED_COMMIT" "$JVM_ONLY")
 if [[ -n "${HMG_GCP_RUN_AS:-}" ]]; then
   REMOTE_ARGS=(sudo -n -H -u "$HMG_GCP_RUN_AS" "${REMOTE_ARGS[@]}")
 fi

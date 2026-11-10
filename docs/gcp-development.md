@@ -20,6 +20,8 @@ GCP 작업 폴더는 푸시된 소스를 받아 검증하는 데 사용한다.
 ```bash
 scripts/gcp-trigger.sh --check          # SSH·원격 저장소·JDK·SDK 확인
 scripts/gcp-trigger.sh --build          # 현재 작업 브랜치 동기화 → 앱 빌드·단위 테스트 + 서버·공용 빌드·테스트
+scripts/gcp-trigger.sh --jvm-only       # 같은 커밋의 서버·공용 빌드·테스트(Android SDK 불필요)
+scripts/gcp-trigger.sh --check --jvm-only # SSH·원격 저장소·JDK 확인
 scripts/gcp-trigger.sh --start-vm       # 중지된 VM도 시작해서 같은 작업 실행
 scripts/gcp-trigger.sh --branch main    # main을 명시해서 빌드할 때
 ```
@@ -75,6 +77,8 @@ export ANDROID_HOME="$HOME/Android/Sdk"
 실행하는 Gradle 태스크는 `:frontend:app:assembleDebug :frontend:app:testDebugUnitTest :backend:build :shared:build`다.
 앱 debug APK와 각 모듈 테스트 결과는 VM 작업 폴더의 각 `build/` 아래에 남는다.
 앱 단위 테스트가 아직 없으면 해당 태스크는 `NO-SOURCE`로 표시된다.
+`--jvm-only`는 `:backend:build :shared:build --configure-on-demand`를 실행한다. 순수 Kotlin 계약·판단 로직을
+검증할 때 사용하며, 앱 빌드·설치·차량 UI 검증을 통과했다는 의미로 사용하지 않는다.
 앱 설치·화면 조작·주행 제한 검증은 이 빌드 트리거와 별도로 실행한다.
 
 참고: [gcloud compute ssh](https://docs.cloud.google.com/sdk/gcloud/reference/compute/ssh),
