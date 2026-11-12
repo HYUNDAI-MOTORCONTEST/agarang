@@ -7,14 +7,28 @@ import androidx.lifecycle.viewModelScope
 import com.hmgchallenge.app.driving.UxRestrictionsMonitor
 import com.hmgchallenge.app.driving.UxRestrictionsState
 import com.hmgchallenge.shared.HealthResponse
+import com.hmgchallenge.app.care.AtomicCareRecordStore
+import com.hmgchallenge.shared.care.CareEventType
+import com.hmgchallenge.shared.care.CareRepository
+import com.hmgchallenge.app.navigation.PleosNavigationClient
+import com.hmgchallenge.shared.data.DataStatus
+import com.hmgchallenge.shared.facility.StopCandidate
+import com.hmgchallenge.shared.forecast.journeyForecasts
+import com.hmgchallenge.shared.journey.NavigationRepository
+import com.hmgchallenge.shared.journey.NavigationSource
+import java.io.File
 import ai.pleos.playground.vehicle.Vehicle
 import ai.pleos.playground.vehicle.listener.EvBatteryStateOfChargeListener
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -44,6 +58,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val uxMonitor = UxRestrictionsMonitor(application)
     val uxRestrictions: StateFlow<UxRestrictionsState> = uxMonitor.state
 
+    private val careRepository = CareRepository(AtomicCareRecordStore(File(application.filesDir, "care-record.json")))
+    val careState = careRepository.state
+
+    val navigation: NavigationSource = NavigationRepository({ PleosNavigationClient(application) })
+    private val forecastTicks = MutableStateFlow(System.currentTimeMillis())
+    val forecast = journeyForecasts(careRepository.records, navigation.snapshots, forecastTicks)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private var navigationJob: Job? = null
+
     // Vehicle SDK 인스턴스는 화면(ViewModel) 수명 동안 유지하고 onCleared()에서 release 한다.
     private var vehicle: Vehicle? = null
 
@@ -58,8 +81,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         uxMonitor.start()
+        reloadCareRecords()
         refreshHealth()
         initVehicleAndReadBattery()
+    }
+
+    fun reloadCareRecords() {
+        viewModelScope.launch { careRepository.load() }
+    }
+
+    fun startNavigation() {
+        if (navigationJob?.isActive == true) return
+        navigation.start()
+        forecastTicks.value = System.currentTimeMillis()
+        navigationJob = viewModelScope.launch {
+            var seconds = 0
+            while (isActive) {
+                delay(1_000)
+                navigation.tick()
+                seconds++
+                if (seconds % 30 == 0) {
+                    forecastTicks.value = System.currentTimeMillis()
+                    if (navigation.connection.value == DataStatus.READY) navigation.refresh()
+                }
+            }
+        }
+    }
+
+    fun stopNavigation() {
+        navigationJob?.cancel()
+        navigationJob = null
+        navigation.stop()
+    }
+
+    fun refreshNavigation() = navigation.refresh()
+    fun prepareStopNavigation(candidate: StopCandidate) = navigation.prepareStop(candidate)
+    fun confirmStopNavigation(confirmationId: String) = navigation.confirmStop(confirmationId)
+    fun cancelStopNavigation() = navigation.cancelStop()
+
+    fun recordCare(type: CareEventType) {
+        viewModelScope.launch { careRepository.record(type) }
+    }
+
+    fun undoCare() {
+        viewModelScope.launch { careRepository.undoLatest() }
+    }
+
+    fun saveCareProfile(monthAge: Int, preferredAmountMl: Int?) {
+        viewModelScope.launch {
+            // Check again when the action executes: driving may begin while the form is open.
+            val ux = uxRestrictions.value
+            if (ux.requiresDistractionOptimization || ux.noSetup) {
+                careRepository.requireParking()
+                return@launch
+            }
+            careRepository.saveProfile(monthAge, preferredAmountMl)
+        }
+    }
+
+    fun editCareEvent(id: String, atEpochMillis: Long, amountMl: Int?) {
+        viewModelScope.launch {
+            val ux = uxRestrictions.value
+            if (ux.requiresDistractionOptimization || ux.noSetup) {
+                careRepository.requireParking()
+                return@launch
+            }
+            careRepository.editEvent(id, atEpochMillis, amountMl)
+        }
     }
 
     fun refreshHealth() {
@@ -159,6 +247,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        stopNavigation()
         uxMonitor.stop()
         try {
             vehicle?.getEvBattery()?.unregisterEvBatteryStateOfCharge(batteryListener)

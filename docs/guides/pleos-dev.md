@@ -136,6 +136,11 @@ Compose 적용: 상태는 ViewModel + `SavedStateHandle`/저장소에 두고, �
 
 - [문서] Cold boot 필수. quick boot면 VHAL을 쓸 수 없다(EMU). 이전 버전 이미지는 지우고 설치한다.
 - [문서] GPU 필요(권장·최소 사양은 NVIDIA/AMD 기준으로만 적혀 있음). 기본 언어는 한국어(차량 설정 > 일반 설정 > 언어).
+- [팀 확인, 2026-11-12] 수동으로 만든 AVD의 화면 규격을 시스템 이미지와 혼동하지 않는다. 설치된 Pleos v2.1.0 이미지의 `devices.xml`에서 `Pleos_Connect_v2_0` 프로필은 **2560×1440, mdpi(160dpi)**다. 이는 이 기본 프로필의 값이며 모든 Pleos 폼팩터를 이 해상도로 고정하라는 뜻이 아니다. 공식 [설치 안내](https://document.pleos.ai/en/docs/connect/guide/getting-started/application-development/setup-connect-sdk-emulator)도 Automotive의 Pleos 기기 프로필을 선택하게 한다(웹 본문에는 해상도·밀도 수치가 없음).
+  - GCP의 수동 AVD가 1920×1080·320dpi로 만들어져 있었다. 기본 프로필보다 작은 화면에 dp·sp가 2배 픽셀 크기로 표시돼, 공조·차량 시스템 UI의 겹침과 앱의 좁은 표시 영역을 함께 확인했다. 11/11의 해당 캡처를 정상 화면 규격의 시각 검증 근거로 사용하지 않는다.
+  - 겹침·과도한 글자 크기가 보이면 먼저 `adb shell wm size`, `adb shell wm density`, `adb shell settings get system font_scale`과 AVD의 `hw.lcd.*`를 확인하고 선택한 기기 프로필과 비교한다. 앱 글자 크기를 줄이는 것으로 환경 오류를 보정하지 않는다.
+  - `wm density`만 실행 중에 바꾸면 차량 시스템 바의 위치·앱 영역이 함께 갱신되지 않을 수 있었다. 프로필을 고칠 때는 원래 AVD 설정을 백업하고 Cold boot한 뒤 시스템 UI까지 다시 캡처한다. 종료된 에뮬레이터가 잠시 ADB 목록에 남을 수 있으므로 프로세스 종료뿐 아니라 ADB 연결 해제도 확인한 뒤 다시 띄운다.
+  - Cold boot 직후 `sys.boot_completed=1`만 확인하고 Activity를 먼저 열면 Driving view까지 덮는 일반 전체 화면으로 뜰 수 있었다. 차량 HOME을 열어 창 배치를 초기화한 뒤 MAIN/LAUNCHER 경로로 앱을 열면 정상 앱 창에 배치됐다. `scripts/run-app.sh`는 설치된 Pleos 홈과 운전 화면 Activity 준비를 확인한다. 패키지명 확인은 이 이미지에서 관찰한 개발 도구용 처리이며 공식 SDK 계약으로 간주하지 않는다.
 - [문서] Virtual Console: `adb forward tcp:8088 tcp:8088` 후 `http://127.0.0.1:8088/`. Vehicle, Motion, ADAS, Convenience, Safety, Energy, Climate 상태를 바꿀 수 있다. 주행 규제 테스트도 여기서 차량 상태를 바꿔서 한다.
 - [문서] FormFactorConsole(폼팩터 테스트): Platform-Tools, Go 1.22+, 8095·8096 포트, Host Display Bridge. 에뮬레이터를 별도 창으로 실행해야 가상 디스플레이가 보인다(Android Studio 내장 창·headless 불가). 가상 디스플레이를 지우면 그 위 앱은 강제 종료된다.
 - [팀 관찰, 공식 문서 아님] 에뮬레이터에서 **VIN 조회 결과가 "invalid"** 로 나온다. 이미지의 SELinux 설정 문제로 보인다. **앱 로직이 VIN에 의존하지 않게** 하고, VIN이 없거나 이상해도 정상 동작하게 만든다.

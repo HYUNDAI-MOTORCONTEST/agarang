@@ -18,6 +18,7 @@ data class JourneySnapshot(
     val estimatedArrivalAtEpochMillis: Long? = null,
     val remainingDistanceMeters: Long? = null,
     val destination: GeoPoint? = null,
+    val isSimulation: Boolean = false,
 ) {
     init {
         require(id.isNotBlank() && destinationLabel.isNotBlank())
