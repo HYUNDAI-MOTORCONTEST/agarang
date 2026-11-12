@@ -16,11 +16,11 @@ Gleo의 서드파티 연동 방법은 위 세 문서에서 확인되지 않았�
 
 | 요구 데이터/기능 | 후보 API·권한 | 현재 앱/환경 확인 | P0 처리와 실패 대안 |
 | --- | --- | --- | --- |
-| 수유·기저귀·수면·월령 | 보호자 입력, 로컬 저장 | 샌드박스만 구현 | #3에서 제출 앱에 구현. 오프라인 동작, 저장 오류 표시 |
+| 수유·기저귀·수면·월령 | 보호자 입력, 로컬 저장 | 제출 앱 구현, GCP 빌드·Pleos 에뮬레이터 기록/복원·실패 처리·주행 제한 검증(#3, 2026-11-11) | 서버 없이 앱 전용 파일에 저장. 복원·취소·저장 오류 처리. [구현·검증 결과](care-records.md) |
 | 주행 중 UI 제한 | AAOS CarUxRestrictionsManager, 별도 차량 도메인 권한 없음 | 앱 구독 구현, 에뮬레이터에서 주차 DO=false 확인 | 기존 경로 유지. 연결 실패는 제한 모드로 처리 |
 | 배터리 | Vehicle EvBattery, CAR_ENERGY | 이 권한만 앱에 선언되어 있음 | 기존 연결 유지. 예보 핵심의 필수 입력으로 사용하지 않음 |
-| 경로·목적지·ETA 읽기 | NaviHelper get*Info/requestTrip, NAVI_ROUTE | 서비스와 내비 앱 설치 확인. 앱 권한은 미선언, 콜백 미검증 | #5에서 승인/허용 조건·초기화·단위를 확인. 그 전에는 DEMO 또는 EMPTY |
-| 경로·경유지 변경 | NaviHelper requestRoute/addWaypoint 등, NAVI_ROUTE_SEARCH | 매니페스트 미선언·실행 미검증 | 사용자 확인 뒤 등록. 미허용/실패 시 정차 후보 안내 유지 |
+| 경로·목적지·ETA 읽기 | NaviHelper get*Info, NAVI_ROUTE | #5 빌드·총 109개 테스트, 실제 SDK ETA 수신·활성 경로 재연결 검증(2026-11-12). 초·미터 단위 공식 확인 | 연결·관측·최신성·안내 모드 구분. 구형 완료 콜백과 isRouting 불일치 처리. [구현·검증 상태](navigation.md) |
+| 경로·경유지 변경 | NaviHelper addWaypoint, NAVI_ROUTE_SEARCH | 확인·슬롯 보존·결과 읽기 및 데모·단위 테스트 구현. 현재 이미지가 0,0 경유지를 반환해 실제 등록 성공 미확인 | 유효하지 않은 경유지 응답이면 추가 요청을 차단하고 ETA 유지. 두 슬롯 덮어쓰기·결과 미확인 재전송 금지 |
 | 내비 화면 요청 | NAVI_CUSTOM_MAP | 현재 사용하지 않음 | 첫 MVP에 권한 추가하지 않음 |
 | 시설·수유실 정보 | 공공데이터 → 서버 정규화·앱 캐시 | 데이터셋/API 미구현. SDK의 휴게소 POI 제공에 기대지 않음 | #6에서 출처·이용 조건·방향·접근성·최신성 확인. 시설 없는 경우도 정상 결과 |
 | 착석 시간 | 보호자가 시작한 주행/케어 세션 | 센서 기반 아기 감지 없음 | DriveSession 기준. 시동 시간과 아기 착석 시간을 동일시하지 않음 |
@@ -42,7 +42,7 @@ NaviHelper의 API별 정확한 권한은 API Reference의 RequiresPermission도 
 - 주차 상태: `DO: false`, `UxR: 0`.
 - 내비 서비스 `ai.pleos.playground.service.navi` 및 내비 앱 설치.
 - Vehicle 서비스, FusedLocation 서비스, CAAS 및 Gleo 모델 공급 패키지 설치.
-- Android SDK는 API 34/Build Tools 34.0.0 확인. 앱 compileSdk 37 검증에는 SDK 패키지 준비가 별도로 필요하다.
+- 최초 점검에서는 Android API 34/Build Tools 34.0.0을 확인했다. 이후 사용자 승인으로 GCP에 platform 37과 Build Tools 36.0.0·37.0.0을 추가하고 #3의 앱 debug 빌드를 통과했다(2026-11-11).
 
 패키지 설치는 앱 사용 승인·API 성공·Gleo 연동 증거가 아니다. 실제 콜백, OTA/서비스 버전, 내비 실패, 권한 거부, 차종 capability는 해당 구현 이슈에서 검증한다.
 

@@ -43,5 +43,23 @@ adb get-state >/dev/null 2>&1 || die "연결된 기기가 없습니다. 에뮬�
 
 cd "$REPO_ROOT"
 ./gradlew "$MODULE:installDebug" "$@" || die "빌드·설치에 실패했습니다."
-adb shell am start -n "$ACTIVITY" || die "앱 실행에 실패했습니다: $ACTIVITY"
+# Pleos v2.1.0의 Cold boot 직후에는 sys.boot_completed=1이어도 차량 홈의 창 배치가 아직 없을 수 있다.
+# 이때 앱을 먼저 열면 Driving view 영역까지 쓰는 일반 전체 화면으로 뜬 것을 확인했다(pleos-dev.md 6장).
+# 설치된 Pleos 홈에서만 표준 HOME 인텐트로 초기화하고, 운전 화면 Activity가 생긴 뒤 런처 경로로 연다.
+if adb shell pm path ai.umos.homescreen 2>/dev/null | grep '^package:' >/dev/null; then
+  if ! adb shell dumpsys activity activities | grep -F 'ai.umos.drivingview/' >/dev/null; then
+    adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME ||
+      die "Pleos 차량 홈을 열지 못했습니다."
+    attempt=0
+    until adb shell dumpsys activity activities | grep -F 'ai.umos.drivingview/' >/dev/null; do
+      if [[ "$attempt" -ge 30 ]]; then
+        die "Pleos 차량 홈의 창 배치가 준비되지 않았습니다. 홈 화면을 확인한 뒤 다시 실행하세요."
+      fi
+      sleep 1
+      attempt=$((attempt + 1))
+    done
+  fi
+fi
+adb shell am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n "$ACTIVITY" ||
+  die "앱 실행에 실패했습니다: $ACTIVITY"
 echo "실행: $ACTIVITY  (로그: adb logcat -s $LOG_TAG)"

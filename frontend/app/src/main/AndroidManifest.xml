@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Vehicle SDK EvBattery 조회 권한 (사용하는 도메인 권한만 선언) -->
     <uses-permission android:name="pleos.car.permission.CAR_ENERGY" />
+    <!-- NaviHelper: SDK guide permits use without a separate application (checked 2026-11-12).
+         Read route/ETA/slots; add a stop only after explicit confirmation. No custom map permission. -->
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
+    <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
     <!-- FusedLocation SDK aar이 자동으로 합치는 권한. SDK가 "준비 중(신청 불가)"이라 승인 전까지 제거한다.
          FusedLocation을 실제로 쓰게 되면 이 줄을 지운다. -->
     <uses-permission

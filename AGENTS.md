@@ -75,7 +75,7 @@ adb logcat -s HmgApp                 # 앱 로그
 - **Kotlin만 사용**한다(앱·서버·공용 모두). Java 소스를 추가하지 않는다.
 - **minSdk 28 이상**(차량 보안 요건: 서명 키 로테이션·리니지).
 - **가로·세로 레이아웃 모두 지원**: `screenOrientation`을 고정하지 않는다. Pleos는 portrait(window 1개)와 landscape(window 2개)를 오가며, 사용자가 window 크기를 바꿀 수 있다.
-- **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 심사를 통과하지 못한다. 현재 선언: `CAR_ENERGY`.
+- **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 심사를 통과하지 못한다. 현재 선언: `CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`(NaviHelper 별도 신청 불필요는 공식 문서 확인, 설치별 실제 권한은 호출 전 확인).
 - **제출 APK**: 실행 가능한 release 빌드를 `apk/팀명_앱이름_release.apk`로 둔다(용량 초과 시 GitHub Releases).
 - **README 필수 4항목**: 앱 이름·한 줄 소개 / 실행 방법 / 테스트 환경·필요한 설정 / APK 위치 또는 Release 링크. 이 4개 섹션을 지우거나 순서를 바꾸지 않는다.
 - **익명성·보안**: 레포·APK·커밋 메시지·스크린샷에 실명, 연락처, 이메일, 소속, 계정 정보, API 키, 서명 키를 넣지 않는다. 키는 환경변수로만 다루고 `.env*`, `*.jks`, `keystore.properties`는 커밋하지 않는다.

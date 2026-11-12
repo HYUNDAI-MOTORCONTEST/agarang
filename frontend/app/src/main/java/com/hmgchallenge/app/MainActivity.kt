@@ -40,27 +40,64 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
+import com.hmgchallenge.app.care.CareScreen
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
 import com.hmgchallenge.app.ui.theme.LocalPleosColors
 import com.hmgchallenge.app.ui.theme.LocalPleosTypography
 import com.hmgchallenge.app.ui.theme.VehicleTheme
 import com.hmgchallenge.shared.HealthResponse
+import com.hmgchallenge.app.navigation.NavigationStatusCard
+import com.hmgchallenge.shared.data.DataSnapshot
+import com.hmgchallenge.shared.data.DataStatus
+import com.hmgchallenge.shared.journey.JourneySnapshot
+import com.hmgchallenge.shared.journey.StopRequestState
 
 class MainActivity : ComponentActivity() {
+    private val mainViewModel by lazy { ViewModelProvider(this)[MainViewModel::class.java] }
+
+    override fun onStart() {
+        super.onStart()
+        mainViewModel.startNavigation()
+    }
+
+    override fun onStop() {
+        mainViewModel.stopNavigation()
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Pleos Back 정책(docs/guides/pleos-platform.md 9장): 최상위 화면에서 Back이 오면 앱을 끝내지 않고 숨긴다.
-        // 지금은 화면이 하나라 항상 최상위다. 하위 화면·팝업이 생기면 그쪽 BackHandler가 먼저 받게 한다.
+        // CareScreen의 프로필·기록 상세 BackHandler가 먼저 받고, 최상위에서만 이 콜백으로 숨긴다.
         onBackPressedDispatcher.addCallback(this) { moveTaskToBack(true) }
         setContent {
             VehicleTheme {
-                val vm: MainViewModel = viewModel()
+                val vm = mainViewModel
                 val state by vm.state.collectAsStateWithLifecycle()
                 val ux by vm.uxRestrictions.collectAsStateWithLifecycle()
+                val care by vm.careState.collectAsStateWithLifecycle()
+                val journey by vm.navigation.snapshots.collectAsStateWithLifecycle()
+                val navigationConnection by vm.navigation.connection.collectAsStateWithLifecycle()
+                val stopRequest by vm.navigation.stopRequest.collectAsStateWithLifecycle()
                 CompositionLocalProvider(LocalUxRestrictions provides ux) {
-                    MainScreen(state = state, onRefreshHealth = vm::refreshHealth, onRefreshBattery = vm::refreshBattery)
+                    CareScreen(
+                        state = care,
+                        onRecord = vm::recordCare,
+                        onUndo = vm::undoCare,
+                        onReload = vm::reloadCareRecords,
+                        onSaveProfile = vm::saveCareProfile,
+                        onEditEvent = vm::editCareEvent,
+                        connections = {
+                            MainScreen(
+                                state = state, onRefreshHealth = vm::refreshHealth, onRefreshBattery = vm::refreshBattery,
+                                journey = journey, navigationConnection = navigationConnection, stopRequest = stopRequest,
+                                onRefreshNavigation = vm::refreshNavigation, onConfirmStop = vm::confirmStopNavigation,
+                                onCancelStop = vm::cancelStopNavigation,
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -75,13 +112,19 @@ class MainActivity : ComponentActivity() {
  * - 버튼(다시 확인·다시 읽기)은 필수 조작이라 그대로 둔다.
  * - 수동 스크롤은 막지 않는다: 문서가 금지한 것은 "자동 스크롤"이고, 작은 window에서 스크롤을 막으면
  *   필수 버튼에 닿지 못할 수 있다. 대신 제한 중에는 내용을 줄여 스크롤이 거의 필요 없게 한다.
- * - 이 앱에는 아직 영상·키보드 입력·설정 화면이 없다. 생기면 noVideo·noKeyboard·noSetup으로 막는다(pleos-dev.md 2.4장).
+ * - 이 연결 화면에는 영상·키보드 입력이 없다. 프로필·기록 설정은 CareScreen에서 주행 중 차단한다.
  */
 @Composable
 fun MainScreen(
     state: MainUiState,
     onRefreshHealth: () -> Unit,
     onRefreshBattery: () -> Unit,
+    journey: DataSnapshot<JourneySnapshot>,
+    navigationConnection: DataStatus,
+    stopRequest: StopRequestState,
+    onRefreshNavigation: () -> Unit,
+    onConfirmStop: (String) -> Unit,
+    onCancelStop: () -> Unit,
 ) {
     val type = LocalPleosTypography.current
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -89,7 +132,7 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 48.dp, vertical = 40.dp),
+                .padding(horizontal = 24.dp, vertical = 40.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             Text(
@@ -100,6 +143,7 @@ fun MainScreen(
                 overflow = TextOverflow.Ellipsis,
             )
             DrivingStatusBanner()
+            NavigationStatusCard(journey, navigationConnection, stopRequest, onRefreshNavigation, onConfirmStop, onCancelStop)
             InfoCard(
                 title = stringResource(R.string.health_title),
                 detail = stringResource(R.string.health_source, HealthResponse.PATH),

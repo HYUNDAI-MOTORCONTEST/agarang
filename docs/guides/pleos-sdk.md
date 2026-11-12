@@ -52,7 +52,7 @@
 | `NAVI_CUSTOM_MAP` | `requestNavigationScreen()` |
 
 - API별 정확한 요구 권한은 API 레퍼런스의 `@RequiresPermission`이 기준이다.
-- [문서에 없음] 우리는 쓰는 기능만 선언한다. 경유지 추가가 핵심이면 `NAVI_ROUTE` + `NAVI_ROUTE_SEARCH`. 내비 화면을 직접 띄우지 않으면 `NAVI_CUSTOM_MAP`은 선언하지 않는다. (현재 매니페스트에는 아직 NAVI 권한이 없다.)
+- [문서에 없음] 우리는 쓰는 기능만 선언한다. 경유지 추가가 핵심이면 `NAVI_ROUTE` + `NAVI_ROUTE_SEARCH`. 내비 화면을 직접 띄우지 않으면 `NAVI_CUSTOM_MAP`은 선언하지 않는다. 현재 #5 어댑터가 조회·경유지 추가 권한 두 개를 선언하며 설치별 실제 허용은 호출 전에 확인한다.
 
 ### 1.2 초기화·해제 (N-initialization-and-release, N-error-handling)
 
@@ -85,7 +85,8 @@ class NaviHelper(context: Context) {
 - `requestRoute()`가 예외 없이 끝나도 탐색 완료가 아니다. 최종 결과는 이벤트로 확인한다. 조회 API도 값을 반환하지 않고 대응 이벤트로 준다.
 - `RouteOption`: `RECOMMENDED`, `SHORT_DISTANCE`, `SHORT_TIME`, `FREE`(무료 도로), `HIGHWAY`, `COMFORTABLE`, `SCHOOL_ZONE`(스쿨존 고려).
 - [AAR] `RouteInfo` 생성자 순서: `latitude, longitude, displayLatitude?, displayLongitude?, poiName, poiId, address, poiSubId, routeOption, poiProvider, isMobileRequest`(뒤쪽은 기본값 있음). **원문 Java 예제 중 일부는 경도를 첫 인자로 넘기는데, 실제 첫 인자는 위도다.** Kotlin에서는 이름 있는 인자로 넘긴다.
-- [AAR] `DestinationInfo`: 위경도, 표시 좌표, `name`, `address`, `remainDistance`, `remainTime`, `tollFare`, `poiId`·`poiSubId`·`poiProvider`. 남은 거리·시간 단위는 문서에 없다(확인 필요, 9장).
+- [AAR] `DestinationInfo`: 위경도, 표시 좌표, `name`, `address`, `remainDistance`, `remainTime`, `tollFare`, `poiId`·`poiSubId`·`poiProvider`.
+- [문서, 2026-11-12 추가 확인] [DestinationInfo API Reference](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/destination-info/entry)는 `remainDistance`를 **미터**, `remainTime`을 **남은 초**, 위경도를 **도**로 설명한다. `remainTime`을 epoch 시각으로 넣지 않고 관측 시각에 더한다. `TripInfo.eta` 등 다른 필드의 단위로 확장 적용하지 않는다.
 
 ### 1.4 경유지 (N-waypoint-settings, N-route-with-waypoints)
 
@@ -107,6 +108,8 @@ class NaviHelper(context: Context) {
 | 오류 | `onError(NaviErrorCode)` |
 
 - 우리 앱에 쓸모 있는 것 [AAR]: `RouteStartInfo`(duration, distance, tollFare, name), `DestinationArrivedInfo`, `TripInfo`(eta, distance, 도착 예상 SOC 등, `requestTrip(TripRequest)`로 요청), `NavigationStatus`(`INACTIVE`, `INITIALIZING`, `FREE_DRIVE`, `ROUTE_DRIVE`, RN에서 v3.0.5에 바뀜), `CautionPoint`(스쿨존·과속방지턱 등 + 남은 거리).
+- [AAR·실기 추가 확인, 2026-11-12] `onRouteEnded()`는 `onRoutingCompleted()`로 대체하도록 폐기된 **탐색 완료** 콜백이다. 에뮬레이터의 내비 서비스 3.0.4가 구형 이름을 보내므로 둘 다 처리한다. 이를 경로 취소로 해석하면 후속 ETA 응답을 버리게 된다. 실제 활성 경로 종료·취소 여부는 상태 조회·취소 이벤트로 구분한다.
+- [실기 추가 확인, 2026-11-12] 같은 서비스는 `ROUTE_GUIDING` 중 `isRouting=false`를 반환한다. 원문의 flag 설명만으로 안내 여부를 판단하지 않고 `NaviMode`를 조회한다. `NavigationStatus` 변경은 재조회 신호로 사용한다. 경유지 조회의 0,0 좌표는 빈 슬롯으로 버리지 않고 불확실한 정보로 처리해 실제 추가를 차단한다. [현재 구현·검증 경계](../agarang/navigation.md).
 - 휴게소 POI 타입·경로 폴리라인 API는 없다([AAR] `RoutePointPoiType` = NORMAL, EV_CHARGING뿐).
 
 ### 1.6 오류 (N-error-handling)
@@ -378,7 +381,7 @@ interface ResultListener {
 ## 9. 확인 못 한 것·시험할 것
 
 - 모든 지정 페이지(N 10, F 6, T 9, S 10, V 6)는 2026-10-28에 정상으로 읽었다. 자동 생성 API 레퍼런스 하위 페이지는 읽지 않고 AAR로 대신 확인했다.
-- NaviHelper: 에뮬레이터에서 `requestRoute`·`addWaypoint`·`onWayPointArrived`가 실제로 오는지, `poiId` 빈 값 허용 여부, `remainDistance`·`remainTime`·`eta` 단위(m·초로 추정, 문서에 없음), 콜백 스레드.
+- NaviHelper: 에뮬레이터에서 `requestRoute`·`addWaypoint`·`onWayPointArrived`가 실제로 오는지, `poiId` 빈 값 허용 여부, 콜백 스레드. `DestinationInfo.remainDistance`·`remainTime`은 공식 API 레퍼런스에서 미터·초 확인(1.3절, 2026-11-12); `TripInfo.eta`는 별도 확인 필요.
 - TTS·STT: 에뮬레이터에 CAAS(`ai.pleos.playground.caas` 4.1.29+)가 있는지(2026-10-25에는 이름으로 못 찾음), `TTS_SERVICE`·`STT_SERVICE`가 승인 대상인지, `ON_DEVICE` 엔진이 에뮬레이터에 있는지, 서비스가 오디오 포커스·선행 묵음을 처리하는지.
 - Android 표준 TTS 엔진이 Pleos 이미지에 있는지.
 - FusedLocation: 승인 시점, proximity alert 사용 조건.
