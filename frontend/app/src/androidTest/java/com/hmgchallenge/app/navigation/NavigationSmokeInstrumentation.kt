@@ -16,11 +16,21 @@ import ai.pleos.playground.navi.data.WaypointChangedInfo
 import ai.pleos.playground.navi.helper.NaviHelper
 import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import com.hmgchallenge.shared.data.DataOrigin
+import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
+import com.hmgchallenge.shared.facility.AmenityStatus
 import com.hmgchallenge.shared.facility.CareFacility
+import com.hmgchallenge.shared.facility.FacilityCatalog
+import com.hmgchallenge.shared.facility.FacilityDataSource
+import com.hmgchallenge.shared.facility.FacilityListing
 import com.hmgchallenge.shared.facility.FacilityType
 import com.hmgchallenge.shared.facility.RouteAccess
+import com.hmgchallenge.shared.facility.RouteAccessCatalog
 import com.hmgchallenge.shared.facility.StopCandidate
+import com.hmgchallenge.shared.facility.StopPlanner
+import com.hmgchallenge.shared.facility.StopPlanningProblem
+import com.hmgchallenge.shared.facility.VerifiedCorridorApproach
+import com.hmgchallenge.shared.facility.VerifiedRouteCorridor
 import com.hmgchallenge.shared.journey.GeoPoint
 import com.hmgchallenge.shared.journey.JourneySnapshot
 import com.hmgchallenge.shared.journey.NavigationRepository
@@ -222,18 +232,71 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                     runOnMainSync { checkNotNull(fixture).addListener(probe) }
                     result.putString("activeRouteReconnect", "passed")
 
-                    // A synthetic on-route fixture in an empty emulator session. Production
-                    // facilities still require #6's provider/access verification.
-                    val waypointLocation = if (officialPoiWaypoint) GeoPoint(37.41275833, 127.09481944) else GeoPoint(37.49, 127.04)
-                    val waypointName = if (officialPoiWaypoint) OFFICIAL_WAYPOINT_NAME else "내비 연동 검증 경유지"
-                    val candidate = StopCandidate(
-                        CareFacility("sdk-test-stop", waypointName, waypointLocation, FacilityType.REST_AREA),
-                        DataOrigin.NAVI_SDK, RouteAccess.CONFIRMED_ON_ROUTE,
-                        navigationLocation = waypointLocation,
-                        journeyId = source.snapshots.value.readyValue!!.id,
-                        accessVerifiedAtEpochMillis = System.currentTimeMillis(),
-                        navigationPoiId = OFFICIAL_WAYPOINT_ID.takeIf { officialPoiWaypoint },
-                    )
+                    // A synthetic on-route fixture in an empty emulator session.
+                    // When officialPoiWaypoint=true, verify the full RouteAccessCatalog -> StopPlanner ->
+                    // StopCandidate -> PleosNavigationClient pipeline produces a navigable waypoint candidate.
+                    val candidate = if (officialPoiWaypoint) {
+                        val evalNow = System.currentTimeMillis()
+                        val guideSource = FacilityDataSource("data-go-kr-15025446", "한국도로공사", "전국휴게소정보표준데이터",
+                            "https://www.data.go.kr/data/15025446/standard.do", "이용허락범위 제한 없음", "반기")
+                        val stopFacility = CareFacility(
+                            id = "public-1416d8b56c2be67278db9e9f",
+                            name = "서울만남(부산)",
+                            location = GeoPoint(37.460166, 127.041908),
+                            type = FacilityType.REST_AREA,
+                            nursingRoom = AmenityStatus.AVAILABLE,
+                            verifiedAtEpochMillis = evalNow,
+                        )
+                        val facilityCatalogSnapshot = DataSnapshot(
+                            DataOrigin.PUBLIC_DATA,
+                            DataStatus.READY,
+                            FacilityCatalog(DataOrigin.PUBLIC_DATA, evalNow, listOf(guideSource), listOf(FacilityListing(stopFacility, guideSource.id))),
+                            evalNow,
+                        )
+                        val routeAccessCatalog = RouteAccessCatalog(
+                            DataOrigin.NAVI_SDK,
+                            evalNow,
+                            listOf(
+                                VerifiedRouteCorridor(
+                                    id = "pleos-sdk-guide-corridor",
+                                    destinationLabel = "42dot",
+                                    destinationLocation = GeoPoint(37.41289678, 127.09383464),
+                                    destinationPoiId = PUBLIC_DESTINATION_ID,
+                                    destinationToleranceMeters = 250.0,
+                                    totalDistanceMeters = 5_000,
+                                    totalDurationSeconds = 600,
+                                    coversRemainingRestAreas = true,
+                                    approaches = listOf(
+                                        VerifiedCorridorApproach(
+                                            facilityId = stopFacility.id,
+                                            access = RouteAccess.CONFIRMED_ON_ROUTE,
+                                            remainingDistanceToDestinationMeters = 20,
+                                            remainingDurationToDestinationSeconds = 25,
+                                            navigationLocation = GeoPoint(37.41275833, 127.09481944),
+                                            navigationPoiId = OFFICIAL_WAYPOINT_ID,
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        )
+                        val liveJourney = source.snapshots.value
+                        val evidence = routeAccessCatalog.evaluate(liveJourney, evalNow)
+                        check(evidence.status == DataStatus.READY) { "routeAccess=${evidence.status}" }
+                        val planned = StopPlanner().plan(liveJourney, facilityCatalogSnapshot, evidence, evalNow)
+                        check(planned.problem == StopPlanningProblem.NONE) { "planProblem=${planned.problem}" }
+                        result.putString("routeAccessPlannerPipeline", "passed")
+                        planned.fullCare.candidates.single()
+                    } else {
+                        val waypointLocation = GeoPoint(37.49, 127.04)
+                        StopCandidate(
+                            CareFacility("sdk-test-stop", "내비 연동 검증 경유지", waypointLocation, FacilityType.REST_AREA),
+                            DataOrigin.NAVI_SDK, RouteAccess.CONFIRMED_ON_ROUTE,
+                            navigationLocation = waypointLocation,
+                            journeyId = source.snapshots.value.readyValue!!.id,
+                            accessVerifiedAtEpochMillis = System.currentTimeMillis(),
+                            navigationPoiId = null,
+                        )
+                    }
                     result.putString("waypointFixture", if (officialPoiWaypoint) "official-poi-id" else "coordinates-only")
                     runOnMainSync { source.prepareStop(candidate) }
                     val prepared = withTimeout(15_000) { source.stopRequest.first { it.phase != StopRequestPhase.CHECKING } }

@@ -1,6 +1,6 @@
 # 시설 데이터와 정차 계획 (#6)
 
-확인일: 2026-11-12. 시설 존재 정보와 현재 여정의 접근 가능성은 서로 다른 데이터다. 시설 좌표·도로 이름만으로 진행 방향, 실제 진입 가능 여부, 주행 시간이나 마지막 휴게소를 만들지 않는다.
+확인일: 2026-11-12, 공급자 연결 및 검증 완료: 2026-11-13. 시설 존재 정보와 현재 여정의 접근 가능성은 서로 다른 데이터다. 시설 좌표·도로 이름만으로 진행 방향, 실제 진입 가능 여부, 주행 시간이나 마지막 휴게소를 만들지 않는다.
 
 ## 공개 데이터와 이용 조건
 
@@ -29,9 +29,11 @@
 ```bash
 curl http://localhost:8081/api/facilities
 curl 'http://localhost:8081/api/facilities?mode=demo'
+curl http://localhost:8081/api/facilities/route-access
+curl 'http://localhost:8081/api/facilities/route-access?mode=demo'
 ```
 
-응답은 `DataSnapshot<FacilityCatalog>`다. 기본 모드는 PUBLIC_DATA이며 데모로 자동 대체하지 않는다. `mode=demo`를 명시한 요청만 합성 시설을 돌려준다. 다른 모드는 HTTP 400이다. 시설 전체 목록을 제공하므로 아기 기록·현재 위치·목적지를 서버에 보내지 않는다. 최대 5,000건·JSON 2MB로 제한한다.
+응답은 각각 `DataSnapshot<FacilityCatalog>`, `DataSnapshot<RouteAccessCatalog>`다. 기본 모드는 각각 PUBLIC_DATA·NAVI_SDK이며 데모로 자동 대체하지 않는다. `mode=demo`를 명시한 요청만 합성 데이터를 돌려준다. 다른 모드는 HTTP 400이다. 시설 전체 목록과 검증된 회랑 메타데이터를 내려받아 앱에서 로컬 평가하므로 아기 기록·현재 위치·목적지를 서버에 보내지 않는다. 시설은 최대 5,000건·JSON 2MB, 경로 접근성 회랑은 최대 500건·JSON 1MB로 제한한다.
 
 - 파일 없음: UNSUPPORTED, 잘못된 파일: FAILED, 자료 기준일이 오래됨: STALE.
 - 공식 페이지의 JSON 다운로드에는 로그인·서비스키가 필요하지 않았다. 고정 다운로드 API는 문서화되어 있지 않아 비공개 경로를 주기적으로 호출하지 않는다.
@@ -44,7 +46,7 @@ curl 'http://localhost:8081/api/facilities?mode=demo'
   -PfacilityOutput=/absolute/path/public-catalog.json
 ```
 
-이미 내려받은 입력을 재현할 때만 `-PfacilityFetchedAtEpochMillis=실제_다운로드_밀리초`를 지정할 수 있다. 기준일을 현재 시각으로 바꾸지는 않는다. `HMG_FACILITY_CATALOG=file:/absolute/path/public-catalog.json`으로 정규화 파일을 지정하고 서버를 재시작한다. 설정하지 않으면 번들을 읽는다. 자동 수집·운영 배포는 포함하지 않았다.
+이미 내려받은 입력을 재현할 때만 `-PfacilityFetchedAtEpochMillis=실제_다운로드_밀리초`를 지정할 수 있다. 기준일을 현재 시각으로 바꾸지는 않는다. `HMG_FACILITY_CATALOG=file:/absolute/path/public-catalog.json`과 `HMG_ROUTE_ACCESS_CATALOG=file:/absolute/path/route-access.json`으로 정규화 파일을 지정하고 서버를 재시작한다. 설정하지 않으면 번들(`public-catalog.json`, `route-access.json`)을 읽는다. 자동 수집·운영 배포는 포함하지 않았다.
 
 ## 경로 근거와 두 정차 계획
 
@@ -59,7 +61,11 @@ curl 'http://localhost:8081/api/facilities?mode=demo'
 
 풀케어는 그중 수유실 AVAILABLE인 후보를, 가까운 정차는 수유실 유무와 관계없이 휴게소·졸음쉼터 후보를 주행 시간순으로 정렬한다. 후보 없음은 정상 결과다. 기저귀 교환 가능 여부를 수유실에서 유추하지 않는다.
 
-현재 NaviHelper 어댑터는 ETA·목적지를 제공하지만 남은 경로 전체·진행 방향별 시설 접근성 근거는 제공하지 않는다. 따라서 **실제 여정에서는 접근성 미확인**을 표시하고 추천·마지막 휴게소·경유지 요청을 활성화하지 않는다. 실제 경로 공급자를 연결하지 않은 상태에서 이 기능을 실도로 추천 완료로 계산하지 않는다.
+공개 NaviHelper SDK 표면만으로는 임의 경로의 전체 폴리라인·방향별 휴게소 목록을 직접 주지 않으므로, 앱은 `HttpRouteAccessCatalogClient`·`AtomicRouteAccessCatalogStore`·`RouteAccessRepository` 파이프라인을 통해 서버(`GET /api/facilities/route-access`)가 제공하는 검증된 회랑(`RouteAccessCatalog`: `gyeongbu-busan-cheonan`, `pleos-sdk-guide-corridor`)을 로컬에서 현재 `JourneySnapshot`과 대조해 `RouteFacilityEvidence`를 만든다.
+
+- `VerifiedRouteCorridor.matches`는 목적지 POI ID(`JourneySnapshot.destinationPoiId`), 목적지 지리 좌표 허용 반경(`destinationToleranceMeters`), 남은 거리 범위(`1..totalDistanceMeters`)가 **단 하나의 회랑**과 일치할 때만 매칭한다. 미등록 목적지·모호한 중복 회랑·유효하지 않은 `(0, 0)` 좌표는 `DataStatus.UNSUPPORTED`(`StopPlanningProblem.ACCESS_UNVERIFIED`)를 유지하고 추천을 만들지 않는다.
+- 매칭된 회랑에서는 남은 목적지 거리 대비 이미 지나친 시설(`remainingDistanceMeters <= remainingDistanceToDestinationMeters`)을 제외하고, 반대 방향(`OPPOSITE_DIRECTION`)과 진입 불가(`INACCESSIBLE`)를 보존해 걸러내며, `CONFIRMED_ON_ROUTE` 시설에는 검증된 진입 좌표(`navigationLocation`)와 호환 `navigationPoiId`를 유지한다.
+- 오프라인·만료 캐시(`RouteAccessRepository`의 `STALE`·`FAILED`)는 실경로 접근 근거로 승격하지 않는다. `MainViewModel`과 `DepartureController` 모두 하드코딩된 `UNSUPPORTED` 대신 `RouteAccessRepository` 상태를 구독한다.
 
 후보는 기존 #5의 `StopCandidate`를 사용한다. 진입 좌표·여정 ID·접근 확인 시각을 포함하며, 실제 내비 요청 직전과 확인 후 재조회에서 여정 일치·60초 만료를 다시 확인한다. 2026-11-13부터 공급자의 선택적 `navigationPoiId`를 `FacilityApproach` → 후보 → 요청·결과 확인까지 보존한다. 현재 Pleos 어댑터는 ID가 없으면 전송 전에 차단하며 공공시설 행 ID를 내비 ID로 사용하지 않는다. ID가 있어도 경로 접근 근거나 진입 좌표 검증을 대신하지 않는다. 내비 슬롯 보존·명시적 확인·결과 읽기 규칙은 [내비 연동](navigation.md)을 따른다. DEMO는 실제 SDK 요청에 전달하지 않는다.
 
@@ -86,6 +92,11 @@ GCP Pleos AVD에서 다음을 실제 실행했다. 로컬에는 JDK·Android SDK
 
 산출물: `.dev/verification/issue6/2026-11-12/verification/final-summary.json`, `verification/ui/*.png`·XML과 모듈 테스트 XML(모두 Git 제외).
 
-당시 별도 미통과: #6 단계의 실제 NaviHelper 읽기 스모크 두 번이 `read=FAILED`로 끝났었다. 이후 2026-11-13 후속 검증에서 기본 내비 회복 뒤 EMPTY·ETA·재연결 및 `(0, 0)` 응답 원인(`NavigationUseCase` 좌표 생략) 규명·공식 `poiId` 경유지 실제 등록 성공 검증까지 완료(#5)했다. [2026-11-13 후속 검증](navigation-repro.md).
+당시 별도 미통과: #6 초기 단계의 실제 NaviHelper 읽기 스모크 두 번이 `read=FAILED`로 끝났었다. 이후 2026-11-13 후속 검증에서 기본 내비 회복 뒤 EMPTY·ETA·재연결 및 `(0, 0)` 응답 원인(`NavigationUseCase` 좌표 생략) 규명·공식 `poiId` 경유지 실제 등록 성공 검증(#5)을 마쳤다. [2026-11-13 후속 검증](navigation-repro.md).
 
-**실제 경로 접근성 공급자 연결은 여전히 미완료다.** 확인한 SDK 공개 표면은 현재 경로 전체·방향별 시설 접근성을 제공하지 않으며, 이 작업 환경에 구성된 외부 경로 공급자도 없었다. 공개 데이터/API·순수 판단·데모·캐시 검증을 실도로 추천 완료로 표시하지 않는다. #6은 이 범위가 남은 부분 완료 상태다.
+2026-11-13 경로 접근성 공급자 연결 후 GCP Pleos Connect v2.1.0 에뮬레이터에서 추가 검증한 결과:
+- `./gradlew :shared:build :backend:build :frontend:app:assembleDebug :frontend:app:assembleDebugAndroidTest --console=plain -Pandroid.builder.sdkDownload=false`: **공용 191개 + 서버 10개 = 201개 테스트 통과**(스킵 0, 실패 0, 오류 0).
+- 라이브 백엔드 `/api/facilities/route-access` HTTP 검증: 기본 `NAVI_SDK` `READY` 2개 회랑(`gyeongbu-busan-cheonan`, `pleos-sdk-guide-corridor`), `?mode=demo` `DEMO` `READY`(`demo-corridor`), `?mode=invalid` HTTP 400 확인.
+- 실제 에뮬레이터 계측(`NavigationSmokeInstrumentation -e mutateEmulatorRoute true -e officialPoiWaypoint true`): 빈 경로(`initialRoute=EMPTY`)에서 출발해 `RouteAccessCatalog -> StopPlanner -> StopCandidate -> PleosNavigationClient.addWaypoint` 전 구간 파이프라인(`routeAccessPlannerPipeline=passed`), 공식 `poiId` 경유지 등록(`confirmedWaypoint=passed`), 15회 취소 복원(`fixtureCleanup=passed`), 이어진 읽기 전용 스모크(`initialRoute=EMPTY`, `passive=passed`) 모두 `result=passed` 통과.
+- `CryResponseSmokeInstrumentation`: 등록 회랑의 실제 내비 경유지 후보 활성화와 미등록 경로의 `ACCESS_UNVERIFIED` 유지(`routeAccessProviderIntegration=passed`), 개인 돌봄 데이터 보존(`personalDataPreserved=true`), `result=passed` 통과.
+- 검증 종료 후 에뮬레이터 상태 `2560×1440`, `160dpi`, `DO: false`, `UxR: 0`, `Night mode: no`, 3종 권한(`CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`) 부여를 확인했다. 미등록 임의 목적지의 상용 지도 폴리라인 조회는 외부 길찾기 계약 범위 밖이므로 설계대로 `UNSUPPORTED`로 안전하게 유지한다. #6 범위 완료.

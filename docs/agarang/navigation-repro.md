@@ -33,11 +33,11 @@
 - 결과 확인은 목적지와 경유지 두 조회가 끝나고 전송 전 목적지 키와 현재 목적지 키가 일치한 경우만 수행한다. SDK가 같은 목적지의 안내를 잠시 종료·재생성(`SAFE_GUIDING` → `ROUTE_GUIDING`)해도 확인할 수 있고, 다른 목적지에 같은 경유지가 나타났다고 이전 요청을 성공 처리하지 않는다.
 - 제공된 `poiId`가 없거나 불일치한 `(0, 0)` 경유지 응답은 계속 차단/미확인으로 유지한다. `DataOrigin.NAVI_SDK`에서 `(0, 0)` 좌표에 `poiId`가 채워져 반환되면 동일 목적지 재조회와 `poiId` 일치(및 기존 슬롯 1 보존)로 등록 성공(`CONFIRMED`)을 확정하며, 비영 좌표가 반환될 때는 진입 좌표와 `poiId`가 모두 일치해야 확정한다. 선택한 시설의 `poiId`가 바뀌어도 이전 선택은 무효화한다.
 
-## #6의 별도 한계
+## #6의 경로 접근성 공급자 경계
 
 공개 SDK 표면의 `TripInfo.summary`는 교통 요약과 `RoutePointInfo` 목록을 제공한다. 확인한 공개 메서드에는 현재 안내 경로의 전체 폴리라인·방향별 휴게소 목록·시설 진입 가능성·남은 모든 휴게소의 완전한 범위를 제공하는 인터페이스가 없다. 내부 API를 호출하거나 공공시설 중심 좌표에서 이 정보를 추정하지 않는다.
 
-현재의 실제 시설 추천·마지막 휴게소 판단을 활성화하려면 현재 여정에 묶인 경로·접근성·진입 좌표·시간/거리의 검증 가능한 공급자가 필요하다. 외부 길찾기 경로를 받더라도 차량 내비의 현재 경로와 같다고 자동 가정해서는 안 된다. 현재는 접근성 미확인 안내와 출처가 표시된 데모를 유지한다.
+이후 #6에서 백엔드 `/api/facilities/route-access`(`RouteAccessCatalog`)와 앱 `RouteAccessRepository`·`MainViewModel`·`DepartureController` 파이프라인을 연결해, 목적지 POI ID·목적지 좌표·남은 거리로 식별되는 검증 회랑에 한해 지나친 시설 제외·반대 방향 제외·`navigationLocation`/`navigationPoiId` 보존·`NaviHelper.addWaypoint` 경유지 등록까지 동작하도록 구현·검증했다(`routeAccessPlannerPipeline=passed`). 미등록 임의 경로는 여전히 `UNSUPPORTED`(`ACCESS_UNVERIFIED`)로 안전하게 유지하며, 외부 길찾기 경로를 차량 내비의 현재 경로와 같다고 자동 가정하지 않는다. [시설 데이터와 정차 계획](facilities.md).
 
 ## 공식 문서의 범위
 

@@ -5,8 +5,10 @@ import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
 import com.hmgchallenge.shared.journey.GeoPoint
 import com.hmgchallenge.shared.journey.JourneySnapshot
+import kotlinx.serialization.Serializable
 
 /** Only a route provider may supply this evidence. Catalog coordinates do not prove access. */
+@Serializable
 data class FacilityApproach(
     val facilityId: String,
     val access: RouteAccess,
@@ -23,6 +25,7 @@ data class FacilityApproach(
     }
 }
 
+@Serializable
 data class RouteFacilityEvidence(
     val journeyId: String,
     val approaches: List<FacilityApproach>,

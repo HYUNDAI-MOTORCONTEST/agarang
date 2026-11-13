@@ -12,17 +12,17 @@ import com.hmgchallenge.shared.care.CareEventType
 import com.hmgchallenge.shared.care.CareRepository
 import com.hmgchallenge.app.navigation.PleosNavigationClient
 import com.hmgchallenge.app.facility.AtomicFacilityCatalogStore
+import com.hmgchallenge.app.facility.AtomicRouteAccessCatalogStore
 import com.hmgchallenge.app.facility.HttpFacilityCatalogClient
+import com.hmgchallenge.app.facility.HttpRouteAccessCatalogClient
 import com.hmgchallenge.app.facility.FacilityUiState
 import com.hmgchallenge.app.departure.DepartureController
-import com.hmgchallenge.shared.data.DataOrigin
-import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
 import com.hmgchallenge.shared.facility.DemoStopScenario
 import com.hmgchallenge.shared.facility.FacilityRepository
 import com.hmgchallenge.shared.facility.LastRestAreaAlert
 import com.hmgchallenge.shared.facility.LastRestAreaAlerts
-import com.hmgchallenge.shared.facility.RouteFacilityEvidence
+import com.hmgchallenge.shared.facility.RouteAccessRepository
 import com.hmgchallenge.shared.facility.FacilityState
 import com.hmgchallenge.shared.facility.StopPlanner
 import com.hmgchallenge.shared.facility.StopCandidate
@@ -82,22 +82,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val facilityRepository = FacilityRepository(HttpFacilityCatalogClient(BuildConfig.BACKEND_BASE_URL),
         AtomicFacilityCatalogStore(File(application.filesDir, "facility-catalog.json")))
+    private val routeAccessRepository = RouteAccessRepository(
+        HttpRouteAccessCatalogClient(BuildConfig.BACKEND_BASE_URL),
+        AtomicRouteAccessCatalogStore(File(application.filesDir, "route-access-catalog.json")),
+    )
     private val facilityDemo = MutableStateFlow(false)
     private val stopPlanner = StopPlanner()
     private val lastRestAlerts = LastRestAreaAlerts()
     private val mutableFacilityAlert = MutableStateFlow<LastRestAreaAlert?>(null)
     val facilityAlert = mutableFacilityAlert.asStateFlow()
-    // NaviHelper currently exposes no route corridor/access evidence. Keep it UNSUPPORTED;
-    // destination coordinates or same-highway labels must not silently enable a recommendation.
-    private val unsupportedAccess = DataSnapshot<RouteFacilityEvidence>(DataOrigin.NAVI_SDK, DataStatus.UNSUPPORTED)
-    val facilities = combine(facilityRepository.state, navigation.snapshots, forecastTicks, facilityDemo) { data, journey, _, demo ->
+    val facilities = combine(
+        facilityRepository.state,
+        routeAccessRepository.state,
+        navigation.snapshots,
+        forecastTicks,
+        facilityDemo,
+    ) { data, _, journey, _, demo ->
         // A fresh SDK/HTTP update may arrive after the last timer tick. Evaluate at receipt time.
         val now = System.currentTimeMillis()
         if (demo) {
             val scenario = DemoStopScenario.create(now)
             FacilityUiState(FacilityState(scenario.facilities),
                 stopPlanner.plan(scenario.journey, scenario.facilities, scenario.evidence, now), true)
-        } else FacilityUiState(data, stopPlanner.plan(journey, data.snapshot, unsupportedAccess, now), false)
+        } else FacilityUiState(data, stopPlanner.plan(journey, data.snapshot, routeAccessRepository.evaluate(journey, now), now), false)
     }.onEach { presentation ->
         val current = mutableFacilityAlert.value
         val result = presentation.plans
@@ -106,10 +113,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lastRestAlerts.poll(result)?.let { mutableFacilityAlert.value = it }
     }.stateIn(viewModelScope, SharingStarted.Eagerly,
         FacilityUiState(facilityRepository.state.value,
-            stopPlanner.plan(navigation.snapshots.value, facilityRepository.state.value.snapshot, unsupportedAccess, System.currentTimeMillis()), false))
+            stopPlanner.plan(
+                navigation.snapshots.value,
+                facilityRepository.state.value.snapshot,
+                routeAccessRepository.evaluate(navigation.snapshots.value),
+                System.currentTimeMillis(),
+            ), false))
 
-    val departure = DepartureController(application.filesDir, careRepository, navigation.snapshots,
-        facilityRepository.state, forecastTicks, uxRestrictions, viewModelScope)
+    val departure = DepartureController(
+        application.filesDir,
+        careRepository,
+        navigation.snapshots,
+        facilityRepository.state,
+        forecastTicks,
+        uxRestrictions,
+        viewModelScope,
+        routeAccessRepository.state,
+        routeAccessRepository::evaluate,
+    )
     val forecast = departure.state.map { it.evaluation?.forecast }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // Vehicle SDK 인스턴스는 화면(ViewModel) 수명 동안 유지하고 onCleared()에서 release 한다.
@@ -149,6 +170,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 seconds++
                 if (seconds % 30 == 0) {
                     facilityRepository.tick()
+                    routeAccessRepository.tick()
                     forecastTicks.value = System.currentTimeMillis()
                     if (navigation.connection.value == DataStatus.READY) navigation.refresh()
                 }
@@ -169,6 +191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshFacilities() {
         viewModelScope.launch { facilityRepository.refresh() }
+        viewModelScope.launch { routeAccessRepository.refresh() }
     }
 
     fun toggleFacilityDemo() {

@@ -42,5 +42,31 @@ data class DemoStopScenario(
                 DataSnapshot(DataOrigin.DEMO, DataStatus.READY, RouteFacilityEvidence(route.id, approaches, true), now),
             )
         }
+
+        fun routeAccessCatalog(now: Long): DataSnapshot<RouteAccessCatalog> {
+            require(now in 0..Long.MAX_VALUE - 3_600_000)
+            val approaches = listOf(
+                VerifiedCorridorApproach("demo-shelter", RouteAccess.CONFIRMED_ON_ROUTE, 47_500, 3_420, GeoPoint(0.0, 0.0)),
+                VerifiedCorridorApproach("demo-full-care", RouteAccess.CONFIRMED_ON_ROUTE, 45_000, 3_240, GeoPoint(0.0, 0.0)),
+                VerifiedCorridorApproach("demo-last-rest", RouteAccess.CONFIRMED_ON_ROUTE, 42_000, 3_120, GeoPoint(0.0, 0.0)),
+                VerifiedCorridorApproach("demo-opposite", RouteAccess.OPPOSITE_DIRECTION, 49_990, 3_590, GeoPoint(0.0, 0.0)),
+                VerifiedCorridorApproach("demo-inaccessible", RouteAccess.INACCESSIBLE, 49_980, 3_580, GeoPoint(0.0, 0.0)),
+            )
+            val corridor = VerifiedRouteCorridor(
+                id = "demo-corridor",
+                destinationLabel = "데모 목적지",
+                destinationLocation = GeoPoint(0.0, 0.0),
+                totalDistanceMeters = 50_000,
+                totalDurationSeconds = 3_600,
+                coversRemainingRestAreas = true,
+                approaches = approaches,
+            )
+            return DataSnapshot(
+                origin = DataOrigin.DEMO,
+                status = DataStatus.READY,
+                value = RouteAccessCatalog(DataOrigin.DEMO, now, listOf(corridor)),
+                observedAtEpochMillis = now,
+            )
+        }
     }
 }

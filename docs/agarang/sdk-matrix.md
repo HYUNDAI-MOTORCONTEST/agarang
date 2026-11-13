@@ -22,7 +22,7 @@ Gleo의 서드파티 연동 방법은 위 세 문서에서 확인되지 않았�
 | 경로·목적지·ETA 읽기 | NaviHelper get*Info, NAVI_ROUTE | 초기 #5에서 ETA·재연결 확인, #6 읽기 실패 뒤 11/13 기본 내비 ‘다시 시도’로 EMPTY·ETA·재연결 다시 확인. 초·미터 단위 공식 확인 | 연결·관측·최신성·안내 모드 구분. 구형 완료 콜백과 isRouting 불일치 처리. [후속 실측](navigation-repro.md) |
 | 경로·경유지 변경 | NaviHelper addWaypoint, NAVI_ROUTE_SEARCH | 2026-11-13 에뮬레이터 실측으로 서비스(`NavigationUseCase.getWaypointRoutePointItem`)가 경유지 조회 좌표를 `(0, 0)`으로 생략하고 `poiId`·이름·남은 거리/시간만 반환함을 확인. 공식 POI ID(`36khp2hdj2cfcm5nqhe3`) 경유지의 실제 추가·재조회 등록 성공·자동 취소 복원 검증 완료 | 호환 POI ID가 없으면 전송 전 거부. `poiId == null`인 `(0, 0)` 응답은 차단하고 ETA 유지. `poiId`가 포함된 `(0, 0)` SDK 응답은 동일 목적지 재조회와 `poiId` 일치(비영 좌표 반환 시 좌표+`poiId` 동시 일치)로 확정. 두 슬롯 덮어쓰기·결과 미확인 재전송 금지 |
 | 내비 화면 요청 | NAVI_CUSTOM_MAP | 현재 사용하지 않음 | 첫 MVP에 권한 추가하지 않음 |
-| 시설·수유실 정보 | 공공데이터 → 서버 정규화·앱 캐시 + 경로 공급자 | 한국도로공사 공개 시설 468건, 정규화·API·캐시·정차 엔진·실패 화면 검증. 공개 SDK에는 현재 경로 전체·방향별 시설 접근성 근거가 없고 외부 공급자는 미구성 | 실경로 접근성은 미확인으로 유지. 좌표·노선명으로 접근·시간·마지막 휴게소를 추정하지 않음. 공급자의 POI ID도 접근 근거와 별도로 전달. [시설 계약](facilities.md) |
+| 시설·수유실 정보 | 공공데이터 → 서버 정규화·앱 캐시 + 검증 회랑 경로 공급자 | 한국도로공사 공개 시설 468건 및 `/api/facilities/route-access` 검증 회랑·`RouteAccessRepository`·앱 캐시·정차 엔진·실패 화면 검증 완료. 미등록 임의 목적지는 외부 길찾기 폴리라인 없이 `UNSUPPORTED` 유지 | 검증 회랑(목적지 POI ID+좌표+남은 거리 매칭)에서는 지나친 시설 제외·반대 방향 제외·`navigationLocation`/`navigationPoiId`를 제공해 경유지 연동까지 동작하며, 미등록 경로는 `ACCESS_UNVERIFIED`로 유지하고 좌표·노선명으로 접근을 추정하지 않음. [시설 계약](facilities.md) |
 | 착석 시간 | 보호자가 시작한 주행/케어 세션 | 센서 기반 아기 감지 없음 | DriveSession 기준. 시동 시간과 아기 착석 시간을 동일시하지 않음 |
 | 급감속·조향 | 표준 AAOS API 또는 지원 Vehicle 도메인, 각 권한/capability 확인 필요 | 관련 권한 미선언·호출 미구현 | F3 후속. 권한/실기 검증 전에는 데모 입력만 사용 |
 | 공조 상태 | 지원 Vehicle 도메인·CAR_CLIMATE 등 API별 권한 검증 | 권한 미선언·미검증 | F3 후속. 상태 조회와 설정 제어를 분리. 미지원이면 안내 생략 |

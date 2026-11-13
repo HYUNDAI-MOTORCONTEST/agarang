@@ -26,6 +26,7 @@ import com.hmgchallenge.shared.departure.PackingSettings
 import com.hmgchallenge.shared.departure.SupplyKind
 import com.hmgchallenge.shared.facility.DemoStopScenario
 import com.hmgchallenge.shared.facility.FacilityState
+import com.hmgchallenge.shared.facility.RouteAccessCatalog
 import com.hmgchallenge.shared.facility.RouteFacilityEvidence
 import com.hmgchallenge.shared.facility.StopCandidate
 import com.hmgchallenge.shared.facility.StopPlanner
@@ -73,6 +74,22 @@ class DepartureController(
     ticks: StateFlow<Long>,
     private val ux: StateFlow<UxRestrictionsState>,
     private val scope: CoroutineScope,
+    routeAccess: StateFlow<DataSnapshot<RouteAccessCatalog>> = MutableStateFlow(DataSnapshot(DataOrigin.NAVI_SDK, DataStatus.UNSUPPORTED)),
+    private val evaluateRouteAccess: (DataSnapshot<JourneySnapshot>, Long) -> DataSnapshot<RouteFacilityEvidence> = { journey, now ->
+        if (journey.status == DataStatus.EMPTY) {
+            DataSnapshot(DataOrigin.NAVI_SDK, DataStatus.EMPTY)
+        } else {
+            val accessSnapshot = routeAccess.value
+            accessSnapshot.readyValue?.evaluate(journey, now)
+                ?: DataSnapshot(
+                    DataOrigin.NAVI_SDK,
+                    when (accessSnapshot.status) {
+                        DataStatus.LOADING, DataStatus.EMPTY -> DataStatus.UNSUPPORTED
+                        else -> accessSnapshot.status
+                    },
+                )
+        }
+    },
 ) {
     private fun canEdit() = !ux.value.requiresDistractionOptimization && !ux.value.noSetup && !ux.value.noKeyboard
     private val repository = DepartureRepository(AtomicDepartureStore(File(filesDir, "departure.json")), ::canEdit)
@@ -92,7 +109,7 @@ class DepartureController(
         DepartureUiState(shownPreparation, shownCare, shownJourney, evaluation, isDemo = example != null, demoDelayMinutes = example?.delayMinutes ?: 0,
             demoSituation = example?.situation ?: DepartureDemoSituation.NORMAL)
     }
-    val state = combine(inputs, facilities, demoProblem, responseVersion) { input, catalog, failed, _ ->
+    val state = combine(inputs, facilities, routeAccess, demoProblem, responseVersion) { input, catalog, _, failed, _ ->
         val now = System.currentTimeMillis()
         val scenario = if (input.isDemo) DemoStopScenario.create(now) else null
         val facilitiesSnapshot = scenario?.facilities?.let { snapshot ->
@@ -101,7 +118,7 @@ class DepartureController(
         val evidence = if (scenario != null && input.journey.readyValue != null) scenario.evidence.let { snapshot ->
             snapshot.copy(value = snapshot.readyValue!!.copy(journeyId = input.journey.readyValue!!.id))
         }
-            else DataSnapshot<RouteFacilityEvidence>(DataOrigin.NAVI_SDK, DataStatus.UNSUPPORTED)
+            else evaluateRouteAccess(input.journey, now)
         val stops = stopPlanner.plan(input.journey, facilitiesSnapshot, evidence, now)
         val context = ResponseContext(input.preparation.record?.outingId ?: "unavailable", input.care.record?.profile?.id, input.isDemo)
         val assessment = ResponseAssessor.assess(context, input.care.record, input.evaluation?.forecast,

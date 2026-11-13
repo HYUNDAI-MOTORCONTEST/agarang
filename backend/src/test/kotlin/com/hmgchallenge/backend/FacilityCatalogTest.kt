@@ -3,13 +3,17 @@ package com.hmgchallenge.backend
 import com.hmgchallenge.backend.facility.FacilityCatalogService
 import com.hmgchallenge.backend.facility.FacilityController
 import com.hmgchallenge.backend.facility.PublicFacilityCatalog
+import com.hmgchallenge.backend.facility.RouteAccessCatalogService
 import com.hmgchallenge.backend.facility.StandardFacilityNormalizer
+import com.hmgchallenge.backend.facility.VerifiedRouteAccessCatalog
 import com.hmgchallenge.shared.data.DataOrigin
 import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
 import com.hmgchallenge.shared.facility.AmenityStatus
 import com.hmgchallenge.shared.facility.FacilityCatalogCodec
 import com.hmgchallenge.shared.facility.FacilityType
+import com.hmgchallenge.shared.facility.RouteAccess
+import com.hmgchallenge.shared.facility.RouteAccessCatalogCodec
 import org.springframework.core.io.DefaultResourceLoader
 import org.springframework.web.server.ResponseStatusException
 import kotlin.test.Test
@@ -102,5 +106,32 @@ class FacilityCatalogTest {
         val stale = FacilityCatalogService({ DataSnapshot(DataOrigin.PUBLIC_DATA, DataStatus.READY, catalog, now) }, { now }).catalog()
         assertEquals(DataStatus.STALE, stale.status)
         assertEquals(catalog.fetchedAtEpochMillis, stale.value!!.fetchedAtEpochMillis)
+    }
+
+    @Test
+    fun bundledRouteAccessCorridorsMatchPublicCatalogAndSeparateModes() {
+        val publicCatalog = PublicFacilityCatalog("classpath:facilities/public-catalog.json", DefaultResourceLoader())
+        val verifiedAccess = VerifiedRouteAccessCatalog("classpath:facilities/route-access.json", DefaultResourceLoader())
+        val controller = FacilityController(publicCatalog, verifiedAccess)
+
+        val publicFacilities = publicCatalog.service.catalog().readyValue!!
+        val facilityIds = publicFacilities.entries.map { it.facility.id }.toSet()
+        val routeAccessSnapshot = RouteAccessCatalogCodec.decode(controller.routeAccess("public").body!!)
+        assertEquals(DataOrigin.NAVI_SDK, routeAccessSnapshot.origin)
+        assertEquals(DataStatus.READY, routeAccessSnapshot.status)
+        val corridors = routeAccessSnapshot.readyValue!!.corridors
+        assertTrue(corridors.isNotEmpty())
+        for (corridor in corridors) {
+            assertTrue(corridor.approaches.all { it.facilityId in facilityIds })
+            assertTrue(corridor.approaches.filter { it.access == RouteAccess.CONFIRMED_ON_ROUTE }
+                .all { it.navigationLocation != null && it.navigationPoiId != null })
+        }
+
+        val demoAccess = RouteAccessCatalogCodec.decode(controller.routeAccess("demo").body!!)
+        assertEquals(DataOrigin.DEMO, demoAccess.origin)
+        assertTrue(demoAccess.readyValue!!.corridors.single().approaches.all { it.facilityId.startsWith("demo-") })
+        assertFailsWith<ResponseStatusException> { controller.routeAccess("secret") }
+        assertEquals(DataStatus.UNSUPPORTED, RouteAccessCatalogService({ null }, { now }).catalog().status)
+        assertEquals(DataStatus.FAILED, RouteAccessCatalogService({ error("broken") }, { now }).catalog().status)
     }
 }

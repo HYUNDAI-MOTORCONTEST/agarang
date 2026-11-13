@@ -74,6 +74,7 @@ class PleosNavigationClient(
                 remainingDurationSeconds = destinationInfo.remainTime.toLong(),
                 remainingDistanceMeters = destinationInfo.remainDistance.toLong(),
                 isSimulation = simulation,
+                destinationPoiId = destinationInfo.poiId.takeIf(String::isNotBlank),
             ))
         }
         override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) = deliver {

@@ -20,7 +20,12 @@ data class NavigationDestination(
     val remainingDurationSeconds: Long?,
     val remainingDistanceMeters: Long?,
     val isSimulation: Boolean = false,
+    val destinationPoiId: String? = null,
 ) {
+    init {
+        require(destinationPoiId == null || destinationPoiId.isNotBlank())
+    }
+
     fun toJourney(id: String, observedAtEpochMillis: Long): JourneySnapshot {
         require(key.isNotBlank() && label.isNotBlank() && observedAtEpochMillis >= 0)
         require(remainingDurationSeconds == null || remainingDurationSeconds >= 0)
@@ -28,7 +33,7 @@ data class NavigationDestination(
         val arrival = remainingDurationSeconds?.let { seconds ->
             Math.addExact(observedAtEpochMillis, Math.multiplyExact(seconds, 1_000L))
         }
-        return JourneySnapshot(id, label, arrival, remainingDistanceMeters, location, isSimulation)
+        return JourneySnapshot(id, label, arrival, remainingDistanceMeters, location, isSimulation, destinationPoiId)
     }
 }
 

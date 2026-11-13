@@ -194,4 +194,70 @@ class StopPlannerTest {
         assertNull(alerts.poll(later))
         assertTrue(alerts.poll(result) != null)
     }
+
+    @Test
+    fun verifiedRouteAccessCatalogComputesRemainingStopsAndRejectsUnregisteredRoutes() {
+        val sources = listOf(FacilityDataSource("src", "한국도로공사", "휴게소", "https://example.invalid/r", "무료", "반기"))
+        val entries = listOf(
+            FacilityListing(CareFacility("public-shelter", "오산", GeoPoint(37.1567, 127.0871), FacilityType.DROWSINESS_SHELTER, AmenityStatus.UNKNOWN, verifiedAtEpochMillis = now), "src"),
+            FacilityListing(CareFacility("public-giheung", "기흥(부산)", GeoPoint(37.2351, 127.1045), FacilityType.REST_AREA, AmenityStatus.AVAILABLE, verifiedAtEpochMillis = now), "src"),
+            FacilityListing(CareFacility("public-anseong", "안성(부산)", GeoPoint(37.0134, 127.1448), FacilityType.REST_AREA, AmenityStatus.AVAILABLE, verifiedAtEpochMillis = now), "src"),
+            FacilityListing(CareFacility("public-jukjeon", "죽전(서울)", GeoPoint(37.3323, 127.1047), FacilityType.REST_AREA, AmenityStatus.AVAILABLE, verifiedAtEpochMillis = now), "src"),
+        )
+        val publicCatalog = DataSnapshot(DataOrigin.PUBLIC_DATA, DataStatus.READY, FacilityCatalog(DataOrigin.PUBLIC_DATA, now, sources, entries), now)
+        val accessCatalog = RouteAccessCatalog(
+            origin = DataOrigin.NAVI_SDK,
+            fetchedAtEpochMillis = now,
+            corridors = listOf(
+                VerifiedRouteCorridor(
+                    id = "gyeongbu-busan-cheonan",
+                    destinationLabel = "천안분기점",
+                    destinationLocation = GeoPoint(36.72, 127.27),
+                    destinationPoiId = "dest-cheonan",
+                    totalDistanceMeters = 80_000,
+                    totalDurationSeconds = 3_600,
+                    coversRemainingRestAreas = true,
+                    approaches = listOf(
+                        VerifiedCorridorApproach("public-jukjeon", RouteAccess.OPPOSITE_DIRECTION, 40_000, 1_800),
+                        VerifiedCorridorApproach("public-giheung", RouteAccess.CONFIRMED_ON_ROUTE, 58_000, 2_610, GeoPoint(37.2354, 127.1042), "poi-giheung"),
+                        VerifiedCorridorApproach("public-shelter", RouteAccess.CONFIRMED_ON_ROUTE, 49_000, 2_200, GeoPoint(37.1569, 127.0870), "poi-osan"),
+                        VerifiedCorridorApproach("public-anseong", RouteAccess.CONFIRMED_ON_ROUTE, 32_000, 1_440, GeoPoint(37.0136, 127.1445), "poi-anseong"),
+                    ),
+                ),
+            ),
+        )
+        // Remaining 55 km < Giheung (58 km to destination -> already passed), but Osan (49 km) & Anseong (32 km) are ahead.
+        val activeRoute = DataSnapshot(
+            DataOrigin.NAVI_SDK,
+            DataStatus.READY,
+            com.hmgchallenge.shared.journey.JourneySnapshot(
+                id = "route-gyeongbu",
+                destinationLabel = "천안분기점",
+                estimatedArrivalAtEpochMillis = now + 2_400_000,
+                remainingDistanceMeters = 55_000,
+                destination = GeoPoint(36.7205, 127.2705),
+                destinationPoiId = "dest-cheonan",
+            ),
+            now,
+        )
+        val evidenceSnapshot = accessCatalog.evaluate(activeRoute, now)
+        assertEquals(DataStatus.READY, evidenceSnapshot.status)
+        val planned = planner.plan(activeRoute, publicCatalog, evidenceSnapshot, now)
+        assertEquals(StopPlanningProblem.NONE, planned.problem)
+        assertEquals(listOf("public-shelter", "public-anseong"), planned.nearestSafeStop.candidates.map { it.facility.id })
+        assertEquals(listOf("public-anseong"), planned.fullCare.candidates.map { it.facility.id })
+        assertEquals("public-anseong", planned.lastRestArea.candidate?.facility?.id)
+        val stop = planned.fullCare.candidates.single()
+        assertTrue(stop.canRequestNavigation)
+        assertEquals(GeoPoint(37.0136, 127.1445), stop.navigationLocation)
+        assertEquals("poi-anseong", stop.navigationPoiId)
+        assertEquals(23_000L, stop.distanceAlongRouteMeters)
+
+        // Unregistered destination stays UNSUPPORTED -> ACCESS_UNVERIFIED.
+        val unknownRoute = activeRoute.copy(value = activeRoute.readyValue!!.copy(
+            destination = GeoPoint(35.1796, 129.0756), destinationPoiId = "dest-unknown"))
+        val unsupportedEvidence = accessCatalog.evaluate(unknownRoute, now)
+        assertEquals(DataStatus.UNSUPPORTED, unsupportedEvidence.status)
+        assertEquals(StopPlanningProblem.ACCESS_UNVERIFIED, planner.plan(unknownRoute, publicCatalog, unsupportedEvidence, now).problem)
+    }
 }

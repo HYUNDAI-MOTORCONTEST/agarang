@@ -19,11 +19,13 @@ data class JourneySnapshot(
     val remainingDistanceMeters: Long? = null,
     val destination: GeoPoint? = null,
     val isSimulation: Boolean = false,
+    val destinationPoiId: String? = null,
 ) {
     init {
         require(id.isNotBlank() && destinationLabel.isNotBlank())
         require(estimatedArrivalAtEpochMillis == null || estimatedArrivalAtEpochMillis >= 0)
         require(remainingDistanceMeters == null || remainingDistanceMeters >= 0)
+        require(destinationPoiId == null || destinationPoiId.isNotBlank())
     }
 }
 

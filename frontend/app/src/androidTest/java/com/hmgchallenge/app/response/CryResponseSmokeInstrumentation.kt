@@ -18,9 +18,20 @@ import com.hmgchallenge.shared.data.DataOrigin
 import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
 import com.hmgchallenge.shared.departure.DepartureDemoSituation
+import com.hmgchallenge.shared.facility.AmenityStatus
+import com.hmgchallenge.shared.facility.CareFacility
 import com.hmgchallenge.shared.facility.FacilityCatalog
+import com.hmgchallenge.shared.facility.FacilityDataSource
+import com.hmgchallenge.shared.facility.FacilityListing
 import com.hmgchallenge.shared.facility.FacilityState
+import com.hmgchallenge.shared.facility.FacilityType
+import com.hmgchallenge.shared.facility.RouteAccess
+import com.hmgchallenge.shared.facility.RouteAccessCatalog
 import com.hmgchallenge.shared.facility.StopPlanType
+import com.hmgchallenge.shared.facility.StopPlanningProblem
+import com.hmgchallenge.shared.facility.VerifiedCorridorApproach
+import com.hmgchallenge.shared.facility.VerifiedRouteCorridor
+import com.hmgchallenge.shared.journey.GeoPoint
 import com.hmgchallenge.shared.journey.JourneySnapshot
 import com.hmgchallenge.shared.response.ResponseNotice
 import com.hmgchallenge.shared.response.ResponsePhase
@@ -59,10 +70,15 @@ class CryResponseSmokeInstrumentation : Instrumentation() {
                 val ux = MutableStateFlow(UxRestrictionsState.Parked)
                 val route = MutableStateFlow(DataSnapshot<JourneySnapshot>(DataOrigin.NAVI_SDK, DataStatus.FAILED))
                 val catalog = MutableStateFlow(FacilityState(DataSnapshot<FacilityCatalog>(DataOrigin.PUBLIC_DATA, DataStatus.FAILED)))
+                val routeAccess = MutableStateFlow(DataSnapshot<RouteAccessCatalog>(DataOrigin.NAVI_SDK, DataStatus.UNSUPPORTED))
                 val ticks = MutableStateFlow(System.currentTimeMillis())
-                suspend fun createController(repository: CareRepository, folder: File): DepartureController = withContext(Dispatchers.Main) {
+                suspend fun createController(
+                    repository: CareRepository,
+                    folder: File,
+                    access: MutableStateFlow<DataSnapshot<RouteAccessCatalog>> = routeAccess,
+                ): DepartureController = withContext(Dispatchers.Main) {
                     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { scopes += it }
-                    DepartureController(folder, repository, route, catalog, ticks, ux, scope).also { it.load() }
+                    DepartureController(folder, repository, route, catalog, ticks, ux, scope, access).also { it.load() }
                 }
                 suspend fun await(controller: DepartureController, predicate: (DepartureUiState) -> Boolean) =
                     withTimeout(8_000) { controller.state.first { predicate(it) } }
@@ -122,6 +138,82 @@ class CryResponseSmokeInstrumentation : Instrumentation() {
                 check(failed.response.active && failed.care.status == CareStoreStatus.NEEDS_RELOAD)
                 check(uncertainStore.read()!!.events.single().type == CareEventType.FEED)
                 result.putString("uncertainWriteKeepsResponseOpen", "passed")
+
+                // Verify route-access provider integration: registered corridor enables a real navigable
+                // StopCandidate; unregistered route keeps ACCESS_UNVERIFIED and returns null candidate.
+                val accessFolder = File(directory, "route-access").also { check(it.mkdir()) }
+                val accessNow = System.currentTimeMillis()
+                val sourceMeta = FacilityDataSource("src", "한국도로공사", "휴게소", "https://example.invalid/r", "무료", "반기")
+                val realFacility = CareFacility(
+                    id = "public-real-stop",
+                    name = "안성(부산)",
+                    location = GeoPoint(37.013407, 127.1448001),
+                    type = FacilityType.REST_AREA,
+                    nursingRoom = AmenityStatus.AVAILABLE,
+                    verifiedAtEpochMillis = accessNow,
+                )
+                catalog.value = FacilityState(DataSnapshot(
+                    DataOrigin.PUBLIC_DATA,
+                    DataStatus.READY,
+                    FacilityCatalog(DataOrigin.PUBLIC_DATA, accessNow, listOf(sourceMeta), listOf(FacilityListing(realFacility, "src"))),
+                    accessNow,
+                ))
+                val verifiedAccess = MutableStateFlow(DataSnapshot(
+                    DataOrigin.NAVI_SDK,
+                    DataStatus.READY,
+                    RouteAccessCatalog(
+                        DataOrigin.NAVI_SDK,
+                        accessNow,
+                        listOf(
+                            VerifiedRouteCorridor(
+                                id = "qa-corridor",
+                                destinationLabel = "천안분기점",
+                                destinationLocation = GeoPoint(36.72, 127.27),
+                                destinationPoiId = "qa-dest-poi",
+                                totalDistanceMeters = 80_000,
+                                totalDurationSeconds = 3_600,
+                                coversRemainingRestAreas = true,
+                                approaches = listOf(
+                                    VerifiedCorridorApproach(
+                                        facilityId = realFacility.id,
+                                        access = RouteAccess.CONFIRMED_ON_ROUTE,
+                                        remainingDistanceToDestinationMeters = 32_000,
+                                        remainingDurationToDestinationSeconds = 1_440,
+                                        navigationLocation = GeoPoint(37.01362, 127.14455),
+                                        navigationPoiId = "36khp2hdj2cfcm5nqhe3",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    accessNow,
+                ))
+                val accessController = createController(care, accessFolder, verifiedAccess)
+                await(accessController) { it.care.record != null && it.preparation.record != null }
+                route.value = DataSnapshot(
+                    DataOrigin.NAVI_SDK,
+                    DataStatus.READY,
+                    JourneySnapshot("qa-journey-1", "천안분기점", accessNow + 2_400_000, 55_000, GeoPoint(36.7201, 127.2701), destinationPoiId = "qa-dest-poi"),
+                    accessNow,
+                )
+                val readyPlan = await(accessController) { it.stops?.problem == StopPlanningProblem.NONE && it.stops?.fullCare?.candidates?.isNotEmpty() == true }
+                check(readyPlan.stops!!.fullCare.candidates.single().canRequestNavigation)
+                withContext(Dispatchers.Main) { accessController.startResponse() }
+                await(accessController) { it.response.active }
+                val selectedReal = withContext(Dispatchers.Main) { accessController.selectResponseStop(StopPlanType.FULL_CARE) }
+                check(selectedReal?.facility?.id == realFacility.id && selectedReal?.navigationPoiId == "36khp2hdj2cfcm5nqhe3")
+                check(withContext(Dispatchers.Main) { accessController.responseNavigationCandidate()?.facility?.id } == realFacility.id)
+
+                route.value = DataSnapshot(
+                    DataOrigin.NAVI_SDK,
+                    DataStatus.READY,
+                    JourneySnapshot("qa-journey-2", "미등록 목적지", accessNow + 2_400_000, 55_000, GeoPoint(35.1796, 129.0756), destinationPoiId = "unknown-poi"),
+                    accessNow,
+                )
+                val unverifiedPlan = await(accessController) { it.stops?.journeyId == "qa-journey-2" && it.stops?.problem == StopPlanningProblem.ACCESS_UNVERIFIED }
+                check(unverifiedPlan.stops!!.fullCare.candidates.isEmpty())
+                check(withContext(Dispatchers.Main) { accessController.responseNavigationCandidate() } == null)
+                result.putString("routeAccessProviderIntegration", "passed")
                 check(originalHashes() == original)
             }
             result.putString("result", "passed")
