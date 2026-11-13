@@ -159,7 +159,8 @@ fun MainScreen(
             DrivingStatusBanner()
             NavigationStatusCard(journey, navigationConnection, stopRequest, onRefreshNavigation, onConfirmStop, onCancelStop)
             FacilityStatusCard(facilities, facilityAlert, onRefreshFacilities, onToggleFacilityDemo, onDismissFacilityAlert, onSelectFacility)
-            InfoCard(
+            // 내장 데이터 빌드(release)는 서버를 쓰지 않으므로 서버 상태 카드를 보이지 않는다.
+            if (!BuildConfig.BUNDLED_FACILITY_DATA) InfoCard(
                 title = stringResource(R.string.health_title),
                 detail = stringResource(R.string.health_source, HealthResponse.PATH),
                 state = state.health,

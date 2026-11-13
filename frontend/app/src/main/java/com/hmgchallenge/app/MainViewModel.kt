@@ -11,6 +11,8 @@ import com.hmgchallenge.app.care.AtomicCareRecordStore
 import com.hmgchallenge.shared.care.CareEventType
 import com.hmgchallenge.shared.care.CareRepository
 import com.hmgchallenge.app.navigation.PleosNavigationClient
+import com.hmgchallenge.app.facility.AssetFacilityCatalogClient
+import com.hmgchallenge.app.facility.AssetRouteAccessCatalogClient
 import com.hmgchallenge.app.facility.AtomicFacilityCatalogStore
 import com.hmgchallenge.app.facility.AtomicRouteAccessCatalogStore
 import com.hmgchallenge.app.facility.HttpFacilityCatalogClient
@@ -80,10 +82,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val forecastTicks = MutableStateFlow(System.currentTimeMillis())
     private var navigationJob: Job? = null
 
-    private val facilityRepository = FacilityRepository(HttpFacilityCatalogClient(BuildConfig.BACKEND_BASE_URL),
+    // release(제출) 빌드는 백엔드 없이 APK에 넣은 공개 시설·경로 접근성 데이터를 쓴다(BUNDLED_FACILITY_DATA).
+    private val facilityRepository = FacilityRepository(
+        if (BuildConfig.BUNDLED_FACILITY_DATA) AssetFacilityCatalogClient(application.assets::open)
+        else HttpFacilityCatalogClient(BuildConfig.BACKEND_BASE_URL),
         AtomicFacilityCatalogStore(File(application.filesDir, "facility-catalog.json")))
     private val routeAccessRepository = RouteAccessRepository(
-        HttpRouteAccessCatalogClient(BuildConfig.BACKEND_BASE_URL),
+        if (BuildConfig.BUNDLED_FACILITY_DATA) AssetRouteAccessCatalogClient(application.assets::open)
+        else HttpRouteAccessCatalogClient(BuildConfig.BACKEND_BASE_URL),
         AtomicRouteAccessCatalogStore(File(application.filesDir, "route-access-catalog.json")),
     )
     private val facilityDemo = MutableStateFlow(false)
@@ -149,7 +155,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         uxMonitor.start()
         reloadCareRecords()
         departure.load()
-        refreshHealth()
+        if (!BuildConfig.BUNDLED_FACILITY_DATA) refreshHealth()
         initVehicleAndReadBattery()
     }
 

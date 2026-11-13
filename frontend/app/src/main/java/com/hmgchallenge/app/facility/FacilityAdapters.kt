@@ -43,6 +43,42 @@ class HttpFacilityCatalogClient(private val baseUrl: String) : FacilityCatalogCl
     }
 }
 
+/**
+ * 백엔드 없이 동작하는 제출(release) 빌드용. 백엔드가 서빙하는 것과 같은 공개 시설 JSON을
+ * APK assets로 넣어 두고(빌드 시 backend/src/main/resources/facilities에서 복사) 그대로 읽는다.
+ * 신선도 판정은 HTTP 응답과 똑같이 FacilityRepository가 한다.
+ */
+class AssetFacilityCatalogClient(
+    private val open: (String) -> java.io.InputStream,
+) : FacilityCatalogClient {
+    override fun fetch(): DataSnapshot<FacilityCatalog> =
+        FacilityCatalogCodec.decode(readBounded(open(ASSET), FacilityCatalog.MAX_JSON_BYTES))
+
+    companion object { const val ASSET = "public-catalog.json" }
+}
+
+/** 검증된 경로 접근성 회랑 JSON을 assets에서 읽는다. [AssetFacilityCatalogClient]와 같은 방식. */
+class AssetRouteAccessCatalogClient(
+    private val open: (String) -> java.io.InputStream,
+) : RouteAccessCatalogClient {
+    override fun fetch(): DataSnapshot<RouteAccessCatalog> =
+        RouteAccessCatalogCodec.decode(readBounded(open(ASSET), RouteAccessCatalog.MAX_JSON_BYTES))
+
+    companion object { const val ASSET = "route-access.json" }
+}
+
+private fun readBounded(stream: java.io.InputStream, maxBytes: Int): String = stream.use { input ->
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8_192)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        require(output.size() + count <= maxBytes)
+        output.write(buffer, 0, count)
+    }
+    output.toByteArray().toString(Charsets.UTF_8)
+}
+
 class AtomicFacilityCatalogStore(private val file: File) : FacilityCatalogStore {
     private val atomic = AtomicFile(file)
     override fun read(): DataSnapshot<FacilityCatalog>? {
