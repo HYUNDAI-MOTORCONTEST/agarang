@@ -19,19 +19,19 @@
 3. 기존 좌표 전용 경유지 요청(POI ID 없음)은 추가 변경 이벤트 뒤 `WaypointInfo`에 0,0을 반환했다. 전송 후 결과는 OUTCOME_UNKNOWN으로 남겼으며 성공으로 표시하거나 재전송하지 않았다.
 4. SDK가 경유지를 추가하는 중 ROUTE_GUIDING → SAFE_GUIDING → ROUTE_GUIDING으로 전환하고 취소·재탐색 이벤트를 보내는 경우를 관측했다. 같은 목적지의 재탐색과 다른 목적지로의 전환을 구분해 결과를 확인해야 한다.
 5. 공식 POI ID와 좌표를 함께 사용하는 후속 검증에서는 반환 목적지의 ID·이름은 예제와 일치했지만 위도 37.41289678·경도 127.09383464로 돌아왔다. 표시용 좌표는 null이었다. 문서 예제의 좌표와 다르다는 관측이며, 그 원인을 POI 변경이나 SDK 오류로 확정하지 않았다. 이전 READY만 확인하던 검증과 별도로, 빈 경로에서 이 실행이 생성했는지와 반환 ID·유효한 지리 좌표를 검사하도록 강화했다.
-6. 공식 경유지 예제의 POI ID·좌표를 함께 보낸 뒤 후속 조회에서 같은 경유지 ID를 확인했지만 `WaypointInfo`의 지리 좌표는 계속 0,0이었다. 기본 내비에는 소프트웨어드림센터가 표시됐다. 요청의 반영 흔적과 앱이 요구하는 정확한 등록 확인을 구분하며, 결과는 OUTCOME_UNKNOWN으로 유지했다.
+6. 공식 경유지 예제의 POI ID(`36khp2hdj2cfcm5nqhe3`)·좌표를 함께 보낸 뒤 `adb logcat`과 계측 콜백으로 확인한 결과, 기본 내비 앱(`ai.umos.maps.android.navigation.app`)의 `NavigationUseCase.getWaypointRoutePointItem` 자체가 경유지 `RoutePointItem(..., point=GeoPoint(latitude=0.0, longitude=0.0), poiID=36khp2hdj2cfcm5nqhe3, remainTimeSec=3, remainDist=12.1)`을 생성하고 이를 그대로 `WaypointInfo(name=소프트웨어드림센터, address=수정구 시흥동, displayLatitude=null, displayLongitude=null, longitude=0.0, latitude=0.0, remainDistance=10, remainTime=60, poiId=36khp2hdj2cfcm5nqhe3, poiSubId=null)`로 내려 보내고 있었다. 경유지가 없을 때는 `onWayPointInfo`가 빈 목록(`[]`)을 반환하며, 등록 직후에는 `onRouteCancelled`/`SAFE_GUIDING` → `onWaypointChanged(FIRST, ADD, start=소프트웨어드림센터/10m/60s)` → `ROUTE_GUIDING`(목적지 남은 거리 50m → 90m) 순서로 재탐색된 뒤 위 `WaypointInfo`가 수신된다.
 
-초기 검증에서는 취소 후 새 응답 3회가 EMPTY·SAFE_GUIDING이었지만 재탐색이 늦게 끝나 같은 공개 테스트 안내가 다시 생성되는 경우를 확인했다. 일시적인 EMPTY를 최종 복원의 증거로 삼지 않는다. 계측 검증은 중간 OUTCOME_UNKNOWN에서 즉시 종료하지 않고 최대 45초 동안 확정 상태를 기다리도록 고쳤다. 개인 돌봄·준비물 파일 지문은 검증 전후 일치했다. 이 기록을 실제 시설의 진입 가능성이나 실차의 경유지 등록 성공으로 해석하지 않는다.
+이 원인이 확정됨에 따라, 어댑터/저장소는 `poiId == null`인 미확인 `(0, 0)` 응답은 계속 `FAILED`/`REQUEST_FAILED`로 차단해 ETA를 보존하되, `DataOrigin.NAVI_SDK`에서 유효한 `poiId`가 채워진 `(0, 0)` `WaypointInfo`가 **전송 전 목적지와 동일한 목적지 키** 위에서 재조회될 때는 `poiId` 일치로 슬롯을 식별하고 `CONFIRMED`로 확정하도록 보완했다. 비영 좌표가 반환되는 서비스에서는 여전히 좌표와 `poiId`가 모두 일치해야 확정한다. 개인 돌봄·준비물 파일(`personalDataPreserved=true`)과 기본 내비 설정·약관은 검증 전후 그대로 유지됐다.
 
-지연 후 재생성된 공개 테스트 안내는 기본 내비의 종료 버튼과 SDK 취소로 종료가 확인되지 않았다. 해당 실행의 생성 기록·정확한 반환 목적지 키·공식 경유지 ID를 확인한 전용 복원 검증에서도 이를 미확인으로 기록했다. 기본 내비 프로세스만 강제 종료 후 다시 실행하자 ‘어디로 갈까요?’ 검색 화면과 SDK의 EMPTY·SAFE_GUIDING을 확인했다. 내비 서비스 데이터·계정·약관·에뮬레이터 이미지는 초기화하지 않았다. 계측의 자동 취소 확인은 새 상태 응답 15회로 늘렸고 복원 미확인이면 전체 결과도 실패로 보고하도록 보완했다. 일반 사용자의 기존 경로에는 이 복원 절차를 실행하지 않는다.
+2차 검증 중 `NavigationSmokeInstrumentation`에 추가했던 `requestTrip` 진단 프로브는 `CAUSE_SEARCH_TRIP` 오류로 공유 `NaviHelper`를 해제해 `finally`의 `cancelRoute()`를 막는 부작용을 확인했고, 프로브를 제거한 최종 `NavigationSmokeInstrumentation`에서는 `mutateEmulatorRoute=true`, `officialPoiWaypoint=true` 실행이 `initialRoute=EMPTY`에서 출발해 `confirmedWaypoint=passed`와 `fixtureCleanup=passed`(`15-fresh-empty-safe-guiding-replies`)까지 모두 통과했다.
 
 ## 이번 보완
 
 - 경로 공급자가 내비용 POI ID를 제공하면 시설 접근 근거 → 후보 → SDK 요청·결과 비교까지 보존한다. 공공시설 ID를 내비 POI ID로 변환하거나 만들어 넣지 않는다.
 - 현재 Pleos 어댑터는 내비 POI ID가 없는 실제 경유지 요청을 로컬 사전 검사에서 차단한다. 좌표 전용 요청의 지원 여부가 공식 문서에 없고 현재 환경에서 올바른 결과를 확인하지 못했기 때문이다. 일반 공급자·데모 계약의 좌표 처리까지 일괄 금지한 것은 아니다.
 - 로컬 검사로 미전송을 확정한 실패는 FAILED로 표시하고 ETA·읽기 연결은 유지한다. SDK 전송 뒤 발생한 불명확한 실패는 계속 OUTCOME_UNKNOWN이며 자동 재전송하지 않는다.
-- 결과 확인은 목적지와 경유지 두 조회가 끝나고 전송 전 목적지 키와 현재 목적지 키가 일치한 경우만 수행한다. SDK가 같은 목적지의 안내를 잠시 종료·재생성해도 확인할 수 있고, 다른 목적지에 같은 경유지가 나타났다고 이전 요청을 성공 처리하지 않는다.
-- 제공된 POI ID와 공급자가 검증한 진입 좌표를 함께 비교한다. ID 일치만으로 0,0 좌표를 유효하다고 바꾸거나 표시용 좌표로 대체하지 않는다. 선택한 시설의 POI ID가 바뀌어도 이전 선택은 무효화한다.
+- 결과 확인은 목적지와 경유지 두 조회가 끝나고 전송 전 목적지 키와 현재 목적지 키가 일치한 경우만 수행한다. SDK가 같은 목적지의 안내를 잠시 종료·재생성(`SAFE_GUIDING` → `ROUTE_GUIDING`)해도 확인할 수 있고, 다른 목적지에 같은 경유지가 나타났다고 이전 요청을 성공 처리하지 않는다.
+- 제공된 `poiId`가 없거나 불일치한 `(0, 0)` 경유지 응답은 계속 차단/미확인으로 유지한다. `DataOrigin.NAVI_SDK`에서 `(0, 0)` 좌표에 `poiId`가 채워져 반환되면 동일 목적지 재조회와 `poiId` 일치(및 기존 슬롯 1 보존)로 등록 성공(`CONFIRMED`)을 확정하며, 비영 좌표가 반환될 때는 진입 좌표와 `poiId`가 모두 일치해야 확정한다. 선택한 시설의 `poiId`가 바뀌어도 이전 선택은 무효화한다.
 
 ## #6의 별도 한계
 
@@ -49,15 +49,9 @@
 
 ## 검증 결과
 
-- GCP 임시 폴더에서 공용·서버·앱 debug·플랫폼 계측 APK를 빌드했다. **공용 187개 + 서버 9개 = 196개 테스트 통과**, 실패·오류·스킵 0. 내비 36개·울음 대응 18개 테스트를 포함한다.
-- 추가한 8개 회귀 검증은 POI ID 전달·변경·0,0 보존, 같은 목적지 재탐색, 다른 목적지와 콜백 순서에 의한 오확인 방지, 미전송 실패·ETA 유지, ID 변경 시 대응 후보 무효화를 다룬다.
-- SDK 읽기·ETA·재연결은 통과했다. 실제 경유지 등록·실제 시설 접근성은 미통과/미구성으로 구분하며 #5·#6을 완료 처리하지 않았다. 최종 읽기 전용 검증은 기존 경로를 만들거나 변경하지 않는다.
+- GCP 임시 폴더에서 `:shared:build`, `:backend:build`, `:frontend:app:assembleDebug`, `:frontend:app:assembleDebugAndroidTest`를 통과했다. **공용(`:shared:test`) 189개 테스트 완료(실패 0)** 및 `:backend:test` 통과. `NavigationRepositoryTest`에는 `(0, 0)` + `poiId == null` 차단 유지(`placeholderWaypointBlocksWritesWithoutDiscardingEta`), `poiId`가 포함된 `(0, 0)` SDK 응답의 재탐색 후 등록 확정·중복 방지·1번 슬롯 보존(`sdkPoiIdentifiedZeroCoordinateWaypointConfirmsRegistrationAndPreventsDuplicate`), `poiId` 미일치·누락 차단(`sdkZeroCoordinateWaypointWithoutMatchingPoiIdStaysUnconfirmed`), 비영 좌표 충돌 시 `poiId`가 같아도 미확정 유지(`sdkNonZeroConflictingCoordinateWithMatchingPoiIdDoesNotConfirm`)를 포함한다.
+- Pleos Connect v2.1.0 에뮬레이터에서 실제 경유지 변경 계측(`NavigationSmokeInstrumentation -e mutateEmulatorRoute true -e officialPoiWaypoint true`)을 빈 경로(`initialRoute=EMPTY`)에서 실행해 목적지 생성·ETA 수신(`60s`, `50m`)·활성 경로 재연결·공식 `poiId`(`36khp2hdj2cfcm5nqhe3`) 경유지 실제 등록 성공(`confirmedWaypoint=passed`)·자동 취소 후 15회 `EMPTY`/`SAFE_GUIDING` 복원(`fixtureCleanup=passed`)까지 `result=passed`(`INSTRUMENTATION_CODE: -1`)를 확인했다.
+- 이어서 실행한 읽기 전용 계측(`NavigationSmokeInstrumentation` 기본 실행)은 `initialRoute=EMPTY`, `passive=passed`, `result=passed`(`INSTRUMENTATION_CODE: -1`)로 통과했고, 실제 Android `CryResponseSmokeInstrumentation` 회귀 검증도 `result=passed`, `personalDataPreserved=true`, `fixtureCleaned=true`(`INSTRUMENTATION_CODE: -1`)로 통과했다.
+- 검증 종료 후 에뮬레이터 상태 `2560×1440`, `160dpi`, `DO: false`, `UxR: 0`, `Night mode: no`, 선언 권한 3종(`CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`) 부여를 확인했고 임시 검증 디렉터리를 정리했다. 실제 차량·실제 도로 시설 접근성(#6 범위)은 여전히 별도 검증 범위다.
 
-- 최종 APK에서 읽기 전용 계측을 울음 대응 회귀 검증 전후로 실행해 두 번 모두 EMPTY·SAFE_GUIDING을 확인했다. 기본 내비 재시작 이후 추가 재생성은 관측하지 않았다. 실제 등록 성공의 검증으로 확대하지 않는다.
-- 실제 Android `CryResponseSmokeInstrumentation`에서 데모 격리·실제 내비 요청 차단·주행 기록 차단·AtomicFile 기록 후 복귀·저장 확인 실패 시 대응 유지가 통과했다. 임시 검증 폴더를 제거했고 개인 돌봄 파일 지문은 최초 상태와 일치했다. 준비물 개인 파일은 처음과 같이 없었다.
-- 설치 APK 지문은 빌드 출력과 일치했고, 당시 로컬 빌드 입력 109개 파일의 내용은 전송 압축본과 일치했다. 2560×1440·160dpi·DO=false·UxR=0·야간 no를 확인하고 앱 홈으로 복귀했다. 이 검증을 실행한 시점은 커밋·푸시 전이었다.
-
-최종 소스 압축본 SHA-256: `d2b97c6be1aa2d93ffdec1eb9ff47bf9463d7309584f60c037c3cefbf98dcad7`.
-debug APK SHA-256: `5ca75f890363dd6b976d05386ab10b7b200ace294eb47e3cd52b54aa0617c99d`.
-
-자료 위치: `.dev/verification/navigation/2026-11-13/`(Git 제외). `verification/summary.json`·`final-device-summary.json`·최종 읽기/울음 대응 계측 결과·빌드 로그·테스트 XML·앱 홈 캡처를 보관한다. `earlier-phases/`의 공식 POI 변경 검증은 이전 빌드의 결과이며, 각 단계의 지문·실패 결과를 최종 읽기 통과와 별도로 보존한다.
+산출물 위치: `.dev/verification/navigation/2026-11-13/`(Git 제외). `summary.json`, `final-device-summary.json`, `mutation-instrument.txt`, `passive-instrument.txt`, `cry-regression-instrument.txt`, `waypoint-probe-logcat.txt` 및 이전 단계의 `verification/`·`earlier-phases/` 기록을 보관한다.

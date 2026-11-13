@@ -70,7 +70,7 @@ class NavigationSmokeInstrumentation : Instrumentation() {
         var createdRoute = false
         fun note(value: String) {
             trace += "${Thread.currentThread().name}:$value"
-            if (trace.size > 40) trace.removeAt(0)
+            if (trace.size > 80) trace.removeAt(0)
         }
         val probe = object : NaviHelperEventListener {
             override fun onRouteStarted(routeStartInfo: RouteStartInfo) { note("start:${routeStartInfo.duration}:${routeStartInfo.distance}") }
@@ -85,19 +85,32 @@ class NavigationSmokeInstrumentation : Instrumentation() {
             override fun onDestinationInfo(destinationInfo: DestinationInfo) {
                 latestDestination.set(destinationInfo)
                 val samplePoint = abs(destinationInfo.latitude - 37.48544722) < 0.002 && abs(destinationInfo.longitude - 127.03636666) < 0.002
-                val sampleLabel = destinationInfo.name in setOf("42dot", "내비 연동 검증 목적지")
-                note("destination:${destinationInfo.remainTime}:${destinationInfo.remainDistance}:samplePoint=$samplePoint:sampleLabel=$sampleLabel:officialPoi=${destinationInfo.poiId == "36khp37hh8gqcm5nqhe5"}")
-                if (createdRoute && destinationInfo.poiId == "36khp37hh8gqcm5nqhe5")
+                val sampleLabel = destinationInfo.name in setOf("42dot", FIXTURE_NAME)
+                note("destination:${destinationInfo.remainTime}:${destinationInfo.remainDistance}:samplePoint=$samplePoint:sampleLabel=$sampleLabel:officialPoi=${destinationInfo.poiId == PUBLIC_DESTINATION_ID}:lat=${destinationInfo.latitude},lon=${destinationInfo.longitude}")
+                if (createdRoute && destinationInfo.poiId == PUBLIC_DESTINATION_ID)
                     note("ownedPublicDestination:${destinationInfo.latitude},${destinationInfo.longitude}:display=${destinationInfo.displayLatitude},${destinationInfo.displayLongitude}")
             }
             override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) {
                 latestWaypoints.set(waypointInfoList.toList())
                 note("waypoints:count=${waypointInfoList.size}:zero=${waypointInfoList.count { it.latitude == 0.0 && it.longitude == 0.0 }}:officialPoi=${waypointInfoList.count { it.poiId == OFFICIAL_WAYPOINT_ID }}")
+                waypointInfoList.forEachIndexed { idx, wp ->
+                    note(
+                        "wp[$idx]:name=${wp.name}:addr=${wp.address}:lat=${wp.latitude},lon=${wp.longitude}" +
+                            ":disp=${wp.displayLatitude},${wp.displayLongitude}:remD=${wp.remainDistance}:remT=${wp.remainTime}" +
+                            ":poi=${wp.poiId}:sub=${wp.poiSubId}:prov=${wp.poiProvider}",
+                    )
+                }
                 if (createdRoute && officialPoiWaypoint) waypointInfoList.filter { it.poiId == OFFICIAL_WAYPOINT_ID }.forEach {
                     note("ownedPublicWaypoint:${it.latitude},${it.longitude}:display=${it.displayLatitude},${it.displayLongitude}")
                 }
             }
-            override fun onWaypointChanged(waypointChangedInfo: WaypointChangedInfo) { note("waypointChanged:${waypointChangedInfo.index}:${waypointChangedInfo.cmdType}") }
+            override fun onWaypointChanged(waypointChangedInfo: WaypointChangedInfo) {
+                val startInfo = waypointChangedInfo.routeStartInfo
+                note(
+                    "waypointChanged:${waypointChangedInfo.index}:${waypointChangedInfo.cmdType}" +
+                        ":start=${startInfo.name}/${startInfo.distance}m/${startInfo.duration}s",
+                )
+            }
             override fun onRouteCancelled() { note("routeCancelled") }
             override fun onDestinationArrived(destinationArrivedInfo: DestinationArrivedInfo) { note("destinationArrived") }
             override fun onError(errorCode: NaviErrorCode) { note("error:$errorCode") }
@@ -120,16 +133,23 @@ class NavigationSmokeInstrumentation : Instrumentation() {
         }
         fun ownedFixture(journey: JourneySnapshot?): Boolean = journey?.let { value ->
             val point = value.destination
-            val priorSample = value.destinationLabel in setOf("42dot", "내비 연동 검증 목적지") && point != null &&
+            val priorSample = value.destinationLabel in setOf("42dot", FIXTURE_NAME) && point != null &&
                 abs(point.latitudeDegrees - 37.48544722) < 0.002 && abs(point.longitudeDegrees - 127.03636666) < 0.002
             val raw = latestDestination.get()
             // Once this run created the route from EMPTY, verify the echoed official POI and
             // valid returned geographic point. This does not establish facility access or an
             // entrance. Never substitute display coordinates or accept 0,0.
-            val createdSample = createdRoute && raw?.poiId == "36khp37hh8gqcm5nqhe5" && point != null &&
+            val createdSample = createdRoute && raw?.poiId == PUBLIC_DESTINATION_ID && point != null &&
                 (point.latitudeDegrees != 0.0 || point.longitudeDegrees != 0.0) &&
                 point.latitudeDegrees == raw.latitude && point.longitudeDegrees == raw.longitude
-            priorSample || createdSample
+            val existingOwnedPublic = mutateRoute && raw?.poiId == PUBLIC_DESTINATION_ID &&
+                raw.name in setOf("42dot", FIXTURE_NAME) && point != null &&
+                (point.latitudeDegrees != 0.0 || point.longitudeDegrees != 0.0) &&
+                latestWaypoints.get().orEmpty().all {
+                    it.poiId == OFFICIAL_WAYPOINT_ID ||
+                        (abs(it.latitude - 37.49) <= 0.002 && abs(it.longitude - 127.04) <= 0.002)
+                }
+            priorSample || createdSample || existingOwnedPublic
         } == true
         try {
             runOnMainSync { source.start() }
@@ -171,6 +191,7 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                 } else if (mutateRoute) {
                     check(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish") { "route fixtures require an emulator" }
                     if (initial.status == DataStatus.READY) {
+                        withTimeout(5_000) { while (latestDestination.get() == null || latestWaypoints.get() == null) delay(25) }
                         // A prior run may have received a late completion for this same fixture.
                         // Continue only that owned, publicly identified sample, never another route.
                         check(ownedFixture(initial.readyValue)) { "an unrelated pre-existing route must be preserved" }
@@ -204,8 +225,9 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                     // A synthetic on-route fixture in an empty emulator session. Production
                     // facilities still require #6's provider/access verification.
                     val waypointLocation = if (officialPoiWaypoint) GeoPoint(37.41275833, 127.09481944) else GeoPoint(37.49, 127.04)
+                    val waypointName = if (officialPoiWaypoint) OFFICIAL_WAYPOINT_NAME else "내비 연동 검증 경유지"
                     val candidate = StopCandidate(
-                        CareFacility("sdk-test-stop", "내비 연동 검증 경유지", waypointLocation, FacilityType.REST_AREA),
+                        CareFacility("sdk-test-stop", waypointName, waypointLocation, FacilityType.REST_AREA),
                         DataOrigin.NAVI_SDK, RouteAccess.CONFIRMED_ON_ROUTE,
                         navigationLocation = waypointLocation,
                         journeyId = source.snapshots.value.readyValue!!.id,
@@ -280,7 +302,10 @@ class NavigationSmokeInstrumentation : Instrumentation() {
     }
 
     private companion object {
+        const val FIXTURE_NAME = "내비 연동 검증 목적지"
+        const val PUBLIC_DESTINATION_ID = "36khp37hh8gqcm5nqhe5"
         // Public waypoint from the official Pleos waypoint-settings example, not a facility recommendation.
         const val OFFICIAL_WAYPOINT_ID = "36khp2hdj2cfcm5nqhe3"
+        const val OFFICIAL_WAYPOINT_NAME = "소프트웨어드림센터"
     }
 }

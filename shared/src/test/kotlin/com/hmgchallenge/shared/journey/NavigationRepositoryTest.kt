@@ -360,17 +360,96 @@ class NavigationRepositoryTest {
     }
 
     @Test
-    fun poiIdDoesNotTurnZeroCoordinatesIntoVerifiedRegistration() {
+    fun sdkPoiIdentifiedZeroCoordinateWaypointConfirmsRegistrationAndPreventsDuplicate() {
+        val stopPoiId = "36khp2hdj2cfcm5nqhe3"
+        candidate = candidate.copy(navigationPoiId = stopPoiId)
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        repo.confirmStop(prepared(repo).id)
+        assertEquals(StopRequestPhase.SUBMITTING, repo.stopRequest.value.phase)
+        // Simulate real emulator recalculation: transient guidance clear followed by active guidance
+        // on the same destination and WaypointInfo returning poiId with omitted (0.0, 0.0) coords.
+        client.listener.onRouteCleared()
+        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
+        client.autoRead = false
+        client.listener.onRouteState(true)
+        client.listener.onWaypoints(listOf(NavigationWaypoint("소프트웨어드림센터", GeoPoint(0.0, 0.0), stopPoiId)))
+        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
+        client.listener.onDestination(destination)
+        assertEquals(StopRequestPhase.CONFIRMED, repo.stopRequest.value.phase)
+        assertNull(repo.stopRequest.value.problem)
+        assertEquals(1, repo.stopRequest.value.confirmation?.slot)
+        assertEquals(1, client.writes.size)
+
+        // Calling prepareStop again for the same facility must detect the slot and avoid duplicates.
+        client.slots = listOf(NavigationWaypoint("소프트웨어드림센터", GeoPoint(0.0, 0.0), stopPoiId))
+        client.autoRead = true
+        candidate = candidate.copy(journeyId = repo.snapshots.value.readyValue?.id, accessVerifiedAtEpochMillis = now)
+        repo.prepareStop(candidate)
+        assertEquals(StopRequestPhase.CONFIRMED, repo.stopRequest.value.phase)
+        assertEquals(1, client.writes.size)
+
+        // Adding a second facility preserves slot 1 (0,0 + poiId) and confirms slot 2.
+        repo.cancelStop()
+        val second = StopCandidate(
+            CareFacility("stop-2", "두 번째 돌봄 시설", GeoPoint(37.46, 127.02), FacilityType.REST_AREA),
+            DataOrigin.PUBLIC_DATA, RouteAccess.CONFIRMED_ON_ROUTE,
+            navigationLocation = GeoPoint(37.46, 127.02),
+            journeyId = repo.snapshots.value.readyValue?.id,
+            accessVerifiedAtEpochMillis = now,
+            navigationPoiId = "second-stop-poi",
+        )
+        repo.prepareStop(second)
+        assertEquals(StopRequestPhase.AWAITING_CONFIRMATION, repo.stopRequest.value.phase)
+        val secondConfirmation = assertNotNull(repo.stopRequest.value.confirmation)
+        assertEquals(2, secondConfirmation.slot)
+        repo.confirmStop(secondConfirmation.id)
+        assertEquals(2, client.writes.size)
+        val slot1 = NavigationWaypoint("소프트웨어드림센터", GeoPoint(0.0, 0.0), stopPoiId)
+        val slot2 = NavigationWaypoint("두 번째 돌봄 시설", GeoPoint(0.0, 0.0), "second-stop-poi")
+        client.listener.onWaypoints(listOf(slot1, slot2))
+        assertEquals(StopRequestPhase.CONFIRMED, repo.stopRequest.value.phase)
+    }
+
+    @Test
+    fun sdkZeroCoordinateWaypointWithoutMatchingPoiIdStaysUnconfirmed() {
         candidate = candidate.copy(navigationPoiId = "provider-stop-id")
         val client = Client()
         val repo = source(client)
         repo.start()
         repo.confirmStop(prepared(repo).id)
-        client.listener.onWaypoints(listOf(NavigationWaypoint("returned stop", GeoPoint(0.0, 0.0), candidate.navigationPoiId)))
-        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
-        assertEquals(DataStatus.READY, repo.snapshots.value.status)
+        client.listener.onWaypoints(listOf(NavigationWaypoint("other stop", GeoPoint(0.0, 0.0), "other-poi-id")))
+        assertEquals(StopRequestPhase.SUBMITTING, repo.stopRequest.value.phase)
         assertEquals(1, client.writes.size)
-        repo.prepareStop(candidate)
+
+        val noPoiCandidate = candidate.copy(
+            facility = candidate.facility.copy(id = "no-poi-stop"),
+            navigationPoiId = null,
+            journeyId = repo.snapshots.value.readyValue?.id,
+        )
+        val client2 = Client()
+        val repo2 = source(client2)
+        repo2.start()
+        val conf2 = noPoiCandidate.copy(journeyId = repo2.snapshots.value.readyValue?.id)
+        repo2.prepareStop(conf2)
+        repo2.confirmStop(assertNotNull(repo2.stopRequest.value.confirmation).id)
+        client2.listener.onWaypoints(listOf(NavigationWaypoint("some stop", GeoPoint(0.0, 0.0), "unexpected-poi-id")))
+        assertEquals(StopRequestPhase.SUBMITTING, repo2.stopRequest.value.phase)
+    }
+
+    @Test
+    fun sdkNonZeroConflictingCoordinateWithMatchingPoiIdDoesNotConfirm() {
+        candidate = candidate.copy(
+            navigationLocation = GeoPoint(37.41275833, 127.09481944),
+            navigationPoiId = "provider-stop-id",
+        )
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        repo.confirmStop(prepared(repo).id)
+        client.listener.onWaypoints(listOf(NavigationWaypoint("conflicting stop", GeoPoint(37.5, 127.0), candidate.navigationPoiId)))
+        assertEquals(StopRequestPhase.SUBMITTING, repo.stopRequest.value.phase)
         assertEquals(1, client.writes.size)
     }
 

@@ -95,7 +95,7 @@ class NaviHelper(context: Context) {
 - 목적지와 경유지를 한 번에: `requestRouteWithWaypoints(RouteWithWaypointsRequest(destination: RouteInfo, waypoints: List<RequestWaypointInfo>))`. 권한 `NAVI_ROUTE_SEARCH`. 결과는 `onRouteStarted`·`onRoutingCompleted`·`onError`.
 - [AAR] `RequestWaypointInfo(latitude, longitude, poiName, waypointIndex, poiId, address, poiSubId, poiProvider)`.
 - [문서, 2026-11-13 추가 확인] [요청 필드](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/request-waypoint-info/entry)·[응답 필드](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/waypoint-info/entry): `poiId`는 특정 지도 POI의 식별자이며 요청에는 기본값이 없다. `poiProvider`는 공급자 이름이고 기본값은 빈 문자열이다. 위경도는 도 단위 지리 좌표, `displayLatitude`·`displayLongitude`는 별도의 nullable 표시 좌표다. 지리 좌표가 시설 진입 지점이라는 보장은 없으며 빈 ID 허용·0,0 처리·표시 좌표 대체도 명시되지 않았다.
-- [팀 정책·실측, 2026-11-13] 현재 Pleos 어댑터는 호환되는 공급자가 준 POI ID가 없으면 실제 추가 요청 전에 거부한다. 공식 ID의 경유지도 현재 환경에서 0,0으로 조회돼 등록 성공을 확정하지 못했다. ID만 일치해도 좌표 검증을 통과시키지 않는다. [후속 재현 기록](../agarang/navigation-repro.md).
+- [팀 정책·실측, 2026-11-13] 현재 Pleos 어댑터는 호환되는 공급자가 준 POI ID가 없으면 실제 추가 요청 전에 거부한다. 에뮬레이터 실측 결과, 경유지 미등록 시 `onWayPointInfo`는 빈 목록을 반환하고, 공식 `poiId`로 등록하면 기본 내비 재탐색(`onRouteCancelled`/`SAFE_GUIDING` → `onWaypointChanged(FIRST, ADD)` → `ROUTE_GUIDING`) 후 `WaypointInfo`에 `poiId`·이름·남은 거리·시간을 담아 돌려주지만 서비스(`NavigationUseCase.getWaypointRoutePointItem`) 단계에서 위경도를 `0.0, 0.0`(`displayLatitude/Longitude = null`)으로 생략한다. 따라서 `poiId == null`인 `(0, 0)` 응답은 불확실한 슬롯으로 차단하고 ETA를 유지하며, 유효한 `poiId`가 포함된 `(0, 0)` SDK 응답은 전송 전 목적지와 일치하는 재조회 뒤 동일 `poiId` 비교(비영 좌표 반환 시에는 좌표+`poiId` 동시 비교)로 등록 성공을 확정한다. [후속 재현 기록](../agarang/navigation-repro.md).
 - 원문 표기 주의: 콜백 이름이 `onWaypointInfo`/`onWayPointInfo`로 섞여 있다. [AAR] 실제는 `onWayPointInfo`, `onWayPointArrived`, `onWaypointChanged`.
 
 ### 1.5 이벤트 (N-event-listeners)
@@ -111,7 +111,7 @@ class NaviHelper(context: Context) {
 
 - 우리 앱에 쓸모 있는 것 [AAR]: `RouteStartInfo`(duration, distance, tollFare, name), `DestinationArrivedInfo`, `TripInfo`(eta, distance, 도착 예상 SOC 등, `requestTrip(TripRequest)`로 요청), `NavigationStatus`(`INACTIVE`, `INITIALIZING`, `FREE_DRIVE`, `ROUTE_DRIVE`, RN에서 v3.0.5에 바뀜), `CautionPoint`(스쿨존·과속방지턱 등 + 남은 거리).
 - [AAR·실기 추가 확인, 2026-11-12] `onRouteEnded()`는 `onRoutingCompleted()`로 대체하도록 폐기된 **탐색 완료** 콜백이다. 에뮬레이터의 내비 서비스 3.0.4가 구형 이름을 보내므로 둘 다 처리한다. 이를 경로 취소로 해석하면 후속 ETA 응답을 버리게 된다. 실제 활성 경로 종료·취소 여부는 상태 조회·취소 이벤트로 구분한다.
-- [실기 추가 확인, 2026-11-12] 같은 서비스는 `ROUTE_GUIDING` 중 `isRouting=false`를 반환한다. 원문의 flag 설명만으로 안내 여부를 판단하지 않고 `NaviMode`를 조회한다. `NavigationStatus` 변경은 재조회 신호로 사용한다. 경유지 조회의 0,0 좌표는 빈 슬롯으로 버리지 않고 불확실한 정보로 처리해 실제 추가를 차단한다. [현재 구현·검증 경계](../agarang/navigation.md).
+- [실기 추가 확인, 2026-11-12~13] 같은 서비스는 `ROUTE_GUIDING` 중 `isRouting=false`를 반환한다. 원문의 flag 설명만으로 안내 여부를 판단하지 않고 `NaviMode`를 조회한다. `NavigationStatus` 변경은 재조회 신호로 사용한다. `poiId` 없이 `(0, 0)` 좌표만 온 경유지 조회는 빈 슬롯으로 버리지 않고 불확실한 정보(`FAILED`/`REQUEST_FAILED`)로 처리해 추가를 차단한다. 반면 `poiId`·이름·남은 거리/시간이 채워진 채 좌표만 `0.0, 0.0`으로 생략돼 오는 에뮬레이터 서비스 응답은 동일 목적지 재조회와 `poiId` 일치를 확인해 등록 완료(`CONFIRMED`)로 확정한다. [현재 구현·검증 경계](../agarang/navigation.md).
 - [AAR·공개 시그니처, 2026-11-13] 확인한 `NaviHelper` 공개 표면에는 현재 경로의 전체 폴리라인·방향별 휴게소 접근성을 제공하는 인터페이스가 없다. `TripInfo.summary`의 `RoutePointInfo` 목록은 전체 도로 경로·시설 진입 근거와 구분한다. 확인한 `RoutePointPoiType`은 NORMAL·EV_CHARGING이다. 내부 API는 호출하지 않았다.
 
 ### 1.6 오류 (N-error-handling)
