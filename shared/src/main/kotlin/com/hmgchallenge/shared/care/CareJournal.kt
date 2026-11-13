@@ -18,9 +18,9 @@ class CareException(val problem: CareProblem) : Exception(problem.name)
 object CareJournal {
     private const val DUPLICATE_WINDOW_MILLIS = 1_000L
 
-    fun normalize(record: CareRecord): CareRecord {
-        if (record.profile.source != CareEntrySource.CAREGIVER ||
-            record.events.any { it.source != CareEntrySource.CAREGIVER }
+    fun normalize(record: CareRecord, expectedSource: CareEntrySource = CareEntrySource.CAREGIVER): CareRecord {
+        if (record.profile.source != expectedSource ||
+            record.events.any { it.source != expectedSource }
         ) throw CareException(CareProblem.INVALID_DATA)
         val sorted = record.events.sortedByDescending { it.occurredAtEpochMillis }
         checkSleepOrder(sorted)
@@ -31,8 +31,8 @@ object CareJournal {
         record.events.firstOrNull { it.type == CareEventType.SLEEP_START || it.type == CareEventType.SLEEP_END }
             ?.type == CareEventType.SLEEP_START
 
-    fun append(record: CareRecord, event: CareEvent): CareRecord {
-        if (event.babyId != record.profile.id || event.source != CareEntrySource.CAREGIVER) {
+    fun append(record: CareRecord, event: CareEvent, expectedSource: CareEntrySource = CareEntrySource.CAREGIVER): CareRecord {
+        if (event.babyId != record.profile.id || event.source != expectedSource) {
             throw CareException(CareProblem.INVALID_DATA)
         }
         if (record.events.any { it.id == event.id }) throw CareException(CareProblem.DUPLICATE_RECORD)
@@ -44,22 +44,23 @@ object CareJournal {
         if (previous != null && event.occurredAtEpochMillis - previous.occurredAtEpochMillis < DUPLICATE_WINDOW_MILLIS) {
             throw CareException(CareProblem.DUPLICATE_RECORD)
         }
-        return normalize(record.copy(events = listOf(event) + record.events))
+        return normalize(record.copy(events = listOf(event) + record.events), expectedSource)
     }
 
-    fun edit(record: CareRecord, eventId: String, atEpochMillis: Long, amountMl: Int?, nowEpochMillis: Long): CareRecord {
+    fun edit(record: CareRecord, eventId: String, atEpochMillis: Long, amountMl: Int?, nowEpochMillis: Long,
+        expectedSource: CareEntrySource = CareEntrySource.CAREGIVER): CareRecord {
         if (atEpochMillis < 0 || atEpochMillis > nowEpochMillis) throw CareException(CareProblem.INVALID_TIME)
         val event = record.events.firstOrNull { it.id == eventId } ?: throw CareException(CareProblem.RECORD_NOT_FOUND)
         if (amountMl != null && (amountMl <= 0 || event.type != CareEventType.FEED)) {
             throw CareException(CareProblem.INVALID_DATA)
         }
         val updated = event.copy(occurredAtEpochMillis = atEpochMillis, feedAmountMl = amountMl)
-        return normalize(record.copy(events = record.events.map { if (it.id == eventId) updated else it }))
+        return normalize(record.copy(events = record.events.map { if (it.id == eventId) updated else it }), expectedSource)
     }
 
-    fun undoLatest(record: CareRecord): CareRecord {
+    fun undoLatest(record: CareRecord, expectedSource: CareEntrySource = CareEntrySource.CAREGIVER): CareRecord {
         if (record.events.isEmpty()) throw CareException(CareProblem.RECORD_NOT_FOUND)
-        return normalize(record.copy(events = record.events.drop(1)))
+        return normalize(record.copy(events = record.events.drop(1)), expectedSource)
     }
 
     private fun checkSleepOrder(newestFirst: List<CareEvent>) {

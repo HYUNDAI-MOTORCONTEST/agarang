@@ -42,6 +42,21 @@ class CareRepositoryTest {
         CareRepository(store, io, nowMillis = { now }, newId = { "id-" + sequence++ })
 
     @Test
+    fun explicitTimingPreferencesPreserveEventsAmountAndProfileIdentity() = runBlocking {
+        val store = MemoryStore();val repo = repository(store);repo.load();repo.saveProfile(3, 150)
+        repo.record(CareEventType.FEED)
+        val before = assertNotNull(repo.state.value.record)
+        repo.saveTimingPreferences(180, null, 120)
+        val after = assertNotNull(repo.state.value.record)
+        assertEquals(before.profile.id, after.profile.id)
+        assertEquals(before.events, after.events)
+        assertEquals(150, after.profile.preferences.preferredFeedAmountMl)
+        assertEquals(180, after.profile.preferences.feedIntervalMinutes)
+        repo.saveTimingPreferences(null, null, null)
+        assertNull(repo.state.value.record!!.profile.preferences.feedIntervalMinutes)
+    }
+
+    @Test
     fun firstUseDoesNotInventProfileHistoryOrIntervals() = runBlocking {
         val store = MemoryStore()
         val repo = repository(store)

@@ -41,6 +41,7 @@ class NavigationRepository(
     private var awaitingDestination = false
     private var awaitingWaypoints = false
     private var submittedAt: Long? = null
+    private var submissionDestinationKey: String? = null
     private var checkingConfirmation: StopConfirmation? = null
     private var routeRevision = 0L
     private var confirmationRevision = -1L
@@ -151,8 +152,14 @@ class NavigationRepository(
             setStop(StopRequestPhase.FAILED, candidate, problem = StopRequestProblem.ROUTE_UNAVAILABLE)
             return
         }
+        if (!candidateMatchesJourney(candidate)) {
+            setStop(StopRequestPhase.FAILED, candidate, problem = StopRequestProblem.INVALID_CANDIDATE)
+            return
+        }
+        if (!preflight(candidate)) return
         checkingConfirmation = null
         submittedAt = null
+        submissionDestinationKey = null
         setStop(StopRequestPhase.CHECKING, candidate)
         query(force = true) // Query slots again before offering a confirmation; never silently replace one.
     }
@@ -179,6 +186,7 @@ class NavigationRepository(
         if (stopRequest.value.phase == StopRequestPhase.SUBMITTING ||
             stopRequest.value.phase == StopRequestPhase.OUTCOME_UNKNOWN) return
         checkingConfirmation = null
+        submissionDestinationKey = null
         setStop(StopRequestPhase.IDLE)
     }
 
@@ -263,6 +271,10 @@ class NavigationRepository(
     private fun finishRead() {
         if (awaitingState || awaitingDestination || awaitingWaypoints) return
         requestedAt = null
+        if (stopRequest.value.phase == StopRequestPhase.SUBMITTING || stopRequest.value.phase == StopRequestPhase.OUTCOME_UNKNOWN) {
+            waypoints.value.readyValue?.let(::resolveSubmission)
+            return
+        }
         if (stopRequest.value.phase != StopRequestPhase.CHECKING) return
         val candidate = stopRequest.value.candidate ?: return
         val journey = snapshots.value.readyValue
@@ -272,6 +284,10 @@ class NavigationRepository(
             return
         }
         val confirmed = checkingConfirmation
+        if (!candidateMatchesJourney(candidate)) {
+            abortStop(StopRequestProblem.INVALID_CANDIDATE)
+            return
+        }
         if (confirmed != null) {
             checkingConfirmation = null
             if (confirmed.journeyId != journey.id || confirmationRevision != routeRevision ||
@@ -281,7 +297,9 @@ class NavigationRepository(
                 abortStop(StopRequestProblem.ROUTE_CHANGED)
                 return
             }
+            if (!preflight(candidate)) return
             submittedAt = clock()
+            submissionDestinationKey = destinationKey
             setStop(StopRequestPhase.SUBMITTING, candidate, confirmed)
             callClient { addWaypoint(candidate, confirmed.slot) }
             // Returning from addWaypoint is not a successful registration. Read back the resulting list.
@@ -304,6 +322,10 @@ class NavigationRepository(
     private fun resolveSubmission(values: List<NavigationWaypoint>) {
         val state = stopRequest.value
         if (state.phase != StopRequestPhase.SUBMITTING && state.phase != StopRequestPhase.OUTCOME_UNKNOWN) return
+        // Adding a waypoint may temporarily clear/recreate guidance. Resolve against the same
+        // destination after BOTH readbacks, not just any route which happens to contain the POI.
+        if (awaitingState || awaitingDestination || awaitingWaypoints || !usableJourney() ||
+            submissionDestinationKey == null || submissionDestinationKey != destinationKey) return
         val confirmation = state.confirmation ?: return
         if (values.size == confirmation.slot && values.take(confirmation.slot - 1) == confirmation.existingWaypoints &&
             matches(values.last(), confirmation.candidate)
@@ -356,6 +378,11 @@ class NavigationRepository(
         val current = client ?: return
         try {
             current.action()
+        } catch (e: NavigationRequestNotSent) {
+            submittedAt = null
+            submissionDestinationKey = null
+            checkingConfirmation = null
+            setStop(StopRequestPhase.FAILED, stopRequest.value.candidate, problem = e.problem)
         } catch (_: SecurityException) {
             fail(DataStatus.PERMISSION_DENIED)
         } catch (_: Exception) {
@@ -363,6 +390,18 @@ class NavigationRepository(
         } catch (_: LinkageError) {
             fail(DataStatus.UNSUPPORTED)
         }
+    }
+
+    private fun preflight(candidate: StopCandidate): Boolean {
+        val problem = try { client?.waypointPreflight(candidate) }
+            catch (_: SecurityException) { StopRequestProblem.PERMISSION_DENIED }
+            catch (_: Exception) { StopRequestProblem.REQUEST_FAILED }
+        if (problem == null) return true
+        submittedAt = null
+        submissionDestinationKey = null
+        checkingConfirmation = null
+        setStop(StopRequestPhase.FAILED, candidate, problem = problem)
+        return false
     }
 
     private fun abortStop(problem: StopRequestProblem) {
@@ -401,7 +440,15 @@ class NavigationRepository(
         if (previous.value != null) previous.copy(status = DataStatus.STALE) else unavailable(fallback)
 
     private fun matches(waypoint: NavigationWaypoint, candidate: StopCandidate) =
-        waypoint.location == candidate.facility.location
+        waypoint.location == (candidate.navigationLocation ?: candidate.facility.location) &&
+            (candidate.navigationPoiId == null || waypoint.poiId == candidate.navigationPoiId)
+
+    private fun candidateMatchesJourney(candidate: StopCandidate): Boolean {
+        if (origin == DataOrigin.DEMO) return candidate.origin == DataOrigin.DEMO
+        val verified = candidate.accessVerifiedAtEpochMillis ?: return false
+        return candidate.canRequestNavigation && candidate.journeyId == journeyId &&
+            !expired(verified, clock(), FRESHNESS_MILLIS)
+    }
 
     private fun expired(since: Long, now: Long, ttl: Long) = now < since || now - since >= ttl
 

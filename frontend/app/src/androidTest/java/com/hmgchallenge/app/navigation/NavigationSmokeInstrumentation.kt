@@ -22,6 +22,7 @@ import com.hmgchallenge.shared.facility.FacilityType
 import com.hmgchallenge.shared.facility.RouteAccess
 import com.hmgchallenge.shared.facility.StopCandidate
 import com.hmgchallenge.shared.journey.GeoPoint
+import com.hmgchallenge.shared.journey.JourneySnapshot
 import com.hmgchallenge.shared.journey.NavigationRepository
 import com.hmgchallenge.shared.journey.StopRequestPhase
 import java.util.concurrent.CopyOnWriteArrayList
@@ -46,10 +47,14 @@ import kotlinx.coroutines.withTimeout
  */
 class NavigationSmokeInstrumentation : Instrumentation() {
     private var mutateRoute = false
+    private var officialPoiWaypoint = false
+    private var cancelOwnedPublicFixture: String? = null
 
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
         mutateRoute = arguments?.getString("mutateEmulatorRoute") == "true"
+        officialPoiWaypoint = arguments?.getString("officialPoiWaypoint") == "true"
+        cancelOwnedPublicFixture = arguments?.getString("cancelOwnedPublicFixture")
         start()
     }
 
@@ -60,6 +65,9 @@ class NavigationSmokeInstrumentation : Instrumentation() {
         val trace = CopyOnWriteArrayList<String>()
         val stateReplies = AtomicInteger()
         val latestMode = AtomicReference<NaviMode>()
+        val latestDestination = AtomicReference<DestinationInfo>()
+        val latestWaypoints = AtomicReference<List<WaypointInfo>>()
+        var createdRoute = false
         fun note(value: String) {
             trace += "${Thread.currentThread().name}:$value"
             if (trace.size > 40) trace.removeAt(0)
@@ -74,8 +82,21 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                 stateReplies.incrementAndGet()
                 note("state:${routeStateInfo.isRouting}:mode=${routeStateInfo.naviMode}:terms=${routeStateInfo.termsAgreement}")
             }
-            override fun onDestinationInfo(destinationInfo: DestinationInfo) { note("destination:${destinationInfo.remainTime}:${destinationInfo.remainDistance}") }
-            override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) { note("waypoints:${waypointInfoList.map { "${it.latitude},${it.longitude}" }}") }
+            override fun onDestinationInfo(destinationInfo: DestinationInfo) {
+                latestDestination.set(destinationInfo)
+                val samplePoint = abs(destinationInfo.latitude - 37.48544722) < 0.002 && abs(destinationInfo.longitude - 127.03636666) < 0.002
+                val sampleLabel = destinationInfo.name in setOf("42dot", "내비 연동 검증 목적지")
+                note("destination:${destinationInfo.remainTime}:${destinationInfo.remainDistance}:samplePoint=$samplePoint:sampleLabel=$sampleLabel:officialPoi=${destinationInfo.poiId == "36khp37hh8gqcm5nqhe5"}")
+                if (createdRoute && destinationInfo.poiId == "36khp37hh8gqcm5nqhe5")
+                    note("ownedPublicDestination:${destinationInfo.latitude},${destinationInfo.longitude}:display=${destinationInfo.displayLatitude},${destinationInfo.displayLongitude}")
+            }
+            override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) {
+                latestWaypoints.set(waypointInfoList.toList())
+                note("waypoints:count=${waypointInfoList.size}:zero=${waypointInfoList.count { it.latitude == 0.0 && it.longitude == 0.0 }}:officialPoi=${waypointInfoList.count { it.poiId == OFFICIAL_WAYPOINT_ID }}")
+                if (createdRoute && officialPoiWaypoint) waypointInfoList.filter { it.poiId == OFFICIAL_WAYPOINT_ID }.forEach {
+                    note("ownedPublicWaypoint:${it.latitude},${it.longitude}:display=${it.displayLatitude},${it.displayLongitude}")
+                }
+            }
             override fun onWaypointChanged(waypointChangedInfo: WaypointChangedInfo) { note("waypointChanged:${waypointChangedInfo.index}:${waypointChangedInfo.cmdType}") }
             override fun onRouteCancelled() { note("routeCancelled") }
             override fun onDestinationArrived(destinationArrivedInfo: DestinationArrivedInfo) { note("destinationArrived") }
@@ -97,7 +118,19 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                 }
             }
         }
-        var createdRoute = false
+        fun ownedFixture(journey: JourneySnapshot?): Boolean = journey?.let { value ->
+            val point = value.destination
+            val priorSample = value.destinationLabel in setOf("42dot", "내비 연동 검증 목적지") && point != null &&
+                abs(point.latitudeDegrees - 37.48544722) < 0.002 && abs(point.longitudeDegrees - 127.03636666) < 0.002
+            val raw = latestDestination.get()
+            // Once this run created the route from EMPTY, verify the echoed official POI and
+            // valid returned geographic point. This does not establish facility access or an
+            // entrance. Never substitute display coordinates or accept 0,0.
+            val createdSample = createdRoute && raw?.poiId == "36khp37hh8gqcm5nqhe5" && point != null &&
+                (point.latitudeDegrees != 0.0 || point.longitudeDegrees != 0.0) &&
+                point.latitudeDegrees == raw.latitude && point.longitudeDegrees == raw.longitude
+            priorSample || createdSample
+        } == true
         try {
             runOnMainSync { source.start() }
             runBlocking {
@@ -108,17 +141,39 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                 check(initial.status == DataStatus.READY || initial.status == DataStatus.EMPTY) { "read=${initial.status}" }
                 result.putString("passive", "passed")
                 result.putString("initialRoute", initial.status.name)
-                if (mutateRoute) {
+                runOnMainSync {
+                    // No second SDK connection: this object only checks local input/permission state.
+                    val localCheck = PleosNavigationClient(targetContext)
+                    val coordinateOnly = StopCandidate(
+                        CareFacility("sdk-local-preflight", "검증용 시설", GeoPoint(37.49, 127.04), FacilityType.REST_AREA),
+                        DataOrigin.NAVI_SDK, RouteAccess.CONFIRMED_ON_ROUTE,
+                        navigationLocation = GeoPoint(37.49, 127.04), journeyId = "local-preflight",
+                        accessVerifiedAtEpochMillis = System.currentTimeMillis(),
+                    )
+                    check(localCheck.waypointPreflight(coordinateOnly) == com.hmgchallenge.shared.journey.StopRequestProblem.INVALID_CANDIDATE)
+                    localCheck.release()
+                    result.putString("coordinateOnlyPreflight", "blocked-before-ipc")
+                }
+                if (cancelOwnedPublicFixture != null) {
+                    // Explicit recovery for a late recreation AFTER a previous fixture cleanup.
+                    // The caller must have the earlier EMPTY/creation trace and supply its exact
+                    // returned destination key. Never infer ownership from READY or a label alone.
+                    check(!mutateRoute) { "cleanup cannot also create or add a route" }
+                    check(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish") { "fixture cleanup requires an emulator" }
+                    check(initial.status == DataStatus.READY)
+                    withTimeout(5_000) { while (latestWaypoints.get() == null) delay(25) }
+                    val raw = checkNotNull(latestDestination.get())
+                    check(raw.poiId == "36khp37hh8gqcm5nqhe5" && raw.name in setOf("42dot", "내비 연동 검증 목적지"))
+                    check("${raw.poiId}:${raw.latitude}:${raw.longitude}" == cancelOwnedPublicFixture) { "fixture identity changed" }
+                    check(latestWaypoints.get()!!.all { it.poiId == OFFICIAL_WAYPOINT_ID }) { "non-fixture waypoint must be preserved" }
+                    createdRoute = true // Only the finally block may cancel this verified fixture.
+                    result.putString("ownedFixtureRecovery", "passed")
+                } else if (mutateRoute) {
                     check(Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish") { "route fixtures require an emulator" }
                     if (initial.status == DataStatus.READY) {
-                        val existing = checkNotNull(initial.readyValue)
-                        val point = existing.destination
                         // A prior run may have received a late completion for this same fixture.
                         // Continue only that owned, publicly identified sample, never another route.
-                        check(existing.destinationLabel in setOf("42dot", "내비 연동 검증 목적지") && point != null &&
-                            abs(point.latitudeDegrees - 37.48544722) < 0.002 &&
-                            abs(point.longitudeDegrees - 127.03636666) < 0.002
-                        ) { "an unrelated pre-existing route must be preserved" }
+                        check(ownedFixture(initial.readyValue)) { "an unrelated pre-existing route must be preserved" }
                         createdRoute = true
                         result.putString("reusedOwnedFixture", "passed")
                     }
@@ -133,24 +188,31 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                         ))
                         createdRoute = true
                     }
-                    val routed = withTimeout(45_000) { source.snapshots.first { it.status == DataStatus.READY } }
+                    val routed = withTimeout(45_000) { source.snapshots.first { it.status == DataStatus.READY && ownedFixture(it.readyValue) } }
                     checkNotNull(routed.readyValue?.estimatedArrivalAtEpochMillis)
                     check(routed.readyValue!!.estimatedArrivalAtEpochMillis!! >= routed.observedAtEpochMillis!!)
                     result.putString("routeRead", "passed")
+                    result.putString("routeIdentity", "passed")
                     result.putLong("remainingDurationSeconds", (routed.readyValue!!.estimatedArrivalAtEpochMillis!! - routed.observedAtEpochMillis!!) / 1_000)
                     result.putLong("remainingDistanceMeters", routed.readyValue!!.remainingDistanceMeters ?: -1)
                     // Returning from background must recover an already active native route too.
                     runOnMainSync { source.stop(); source.start() }
-                    withTimeout(20_000) { source.snapshots.first { it.status == DataStatus.READY } }
+                    withTimeout(20_000) { source.snapshots.first { it.status == DataStatus.READY && ownedFixture(it.readyValue) } }
                     runOnMainSync { checkNotNull(fixture).addListener(probe) }
                     result.putString("activeRouteReconnect", "passed")
 
                     // A synthetic on-route fixture in an empty emulator session. Production
                     // facilities still require #6's provider/access verification.
+                    val waypointLocation = if (officialPoiWaypoint) GeoPoint(37.41275833, 127.09481944) else GeoPoint(37.49, 127.04)
                     val candidate = StopCandidate(
-                        CareFacility("sdk-test-stop", "내비 연동 검증 경유지", GeoPoint(37.49, 127.04), FacilityType.REST_AREA),
+                        CareFacility("sdk-test-stop", "내비 연동 검증 경유지", waypointLocation, FacilityType.REST_AREA),
                         DataOrigin.NAVI_SDK, RouteAccess.CONFIRMED_ON_ROUTE,
+                        navigationLocation = waypointLocation,
+                        journeyId = source.snapshots.value.readyValue!!.id,
+                        accessVerifiedAtEpochMillis = System.currentTimeMillis(),
+                        navigationPoiId = OFFICIAL_WAYPOINT_ID.takeIf { officialPoiWaypoint },
                     )
+                    result.putString("waypointFixture", if (officialPoiWaypoint) "official-poi-id" else "coordinates-only")
                     runOnMainSync { source.prepareStop(candidate) }
                     val prepared = withTimeout(15_000) { source.stopRequest.first { it.phase != StopRequestPhase.CHECKING } }
                     if (prepared.phase == StopRequestPhase.CONFIRMED) {
@@ -160,6 +222,8 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                         runOnMainSync { note("fixture:confirmStop"); source.confirmStop(checkNotNull(prepared.confirmation).id) }
                         val confirmed = withTimeout(45_000) {
                             source.stopRequest.first {
+                                // Guidance can temporarily be cleared during a waypoint recalculation.
+                                // OUTCOME_UNKNOWN is not final: allow later readback to resolve it.
                                 it.phase == StopRequestPhase.CONFIRMED || it.phase == StopRequestPhase.FAILED
                             }
                         }
@@ -173,6 +237,7 @@ class NavigationSmokeInstrumentation : Instrumentation() {
             result.putString("result", "failed")
             result.putString("problem", "${error.javaClass.simpleName}:${error.message}")
             result.putString("stopState", "${source.stopRequest.value.phase}:${source.stopRequest.value.problem}")
+            result.putString("routeIdentityAtFailure", ownedFixture(source.snapshots.value.readyValue).toString())
             resultCode = Activity.RESULT_CANCELED
         } finally {
             timerScope.cancel()
@@ -183,7 +248,7 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                         withTimeout(15_000) { source.snapshots.first { it.status == DataStatus.EMPTY } }
                         // Check fresh mode responses too. A FREE_DRIVE event alone can arrive
                         // before the navigation backend has actually finished cancelling.
-                        repeat(3) {
+                        repeat(15) {
                             delay(1_000)
                             val previous = stateReplies.get()
                             runOnMainSync { source.refresh() }
@@ -194,9 +259,13 @@ class NavigationSmokeInstrumentation : Instrumentation() {
                         }
                     }
                     result.putString("fixtureCleanup", "passed")
+                    result.putString("fixtureQuietWindow", "15-fresh-empty-safe-guiding-replies")
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
                 result.putString("fixtureCleanup", "unconfirmed")
+                result.putString("fixtureCleanupProblem", error.javaClass.simpleName)
+                result.putString("result", "failed")
+                if (!result.containsKey("problem")) result.putString("problem", "fixture cleanup unconfirmed")
                 resultCode = Activity.RESULT_CANCELED
             } finally {
                 runOnMainSync {
@@ -208,5 +277,10 @@ class NavigationSmokeInstrumentation : Instrumentation() {
         result.putString("callbackTrace", trace.joinToString("|"))
         // Complete only after cleanup: Instrumentation.finish may terminate the target process.
         finish(resultCode, result)
+    }
+
+    private companion object {
+        // Public waypoint from the official Pleos waypoint-settings example, not a facility recommendation.
+        const val OFFICIAL_WAYPOINT_ID = "36khp2hdj2cfcm5nqhe3"
     }
 }

@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModelProvider
-import com.hmgchallenge.app.care.CareScreen
+import com.hmgchallenge.app.departure.DepartureApp
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
 import com.hmgchallenge.app.ui.theme.LocalPleosColors
@@ -49,6 +49,10 @@ import com.hmgchallenge.app.ui.theme.LocalPleosTypography
 import com.hmgchallenge.app.ui.theme.VehicleTheme
 import com.hmgchallenge.shared.HealthResponse
 import com.hmgchallenge.app.navigation.NavigationStatusCard
+import com.hmgchallenge.app.facility.FacilityStatusCard
+import com.hmgchallenge.app.facility.FacilityUiState
+import com.hmgchallenge.shared.facility.LastRestAreaAlert
+import com.hmgchallenge.shared.facility.StopCandidate
 import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
 import com.hmgchallenge.shared.journey.JourneySnapshot
@@ -77,24 +81,30 @@ class MainActivity : ComponentActivity() {
                 val vm = mainViewModel
                 val state by vm.state.collectAsStateWithLifecycle()
                 val ux by vm.uxRestrictions.collectAsStateWithLifecycle()
-                val care by vm.careState.collectAsStateWithLifecycle()
+                val departure by vm.departure.state.collectAsStateWithLifecycle()
                 val journey by vm.navigation.snapshots.collectAsStateWithLifecycle()
                 val navigationConnection by vm.navigation.connection.collectAsStateWithLifecycle()
                 val stopRequest by vm.navigation.stopRequest.collectAsStateWithLifecycle()
+                val facilities by vm.facilities.collectAsStateWithLifecycle()
+                val facilityAlert by vm.facilityAlert.collectAsStateWithLifecycle()
                 CompositionLocalProvider(LocalUxRestrictions provides ux) {
-                    CareScreen(
-                        state = care,
-                        onRecord = vm::recordCare,
-                        onUndo = vm::undoCare,
-                        onReload = vm::reloadCareRecords,
-                        onSaveProfile = vm::saveCareProfile,
-                        onEditEvent = vm::editCareEvent,
+                    DepartureApp(
+                        state = departure,
+                        actions = vm.departure,
+                        onReloadCare = vm::reloadCareRecords,
+                        onNavigateStop = vm::prepareStopNavigation,
+                        stopRequest = stopRequest,
+                        onConfirmStop = vm::confirmStopNavigation,
+                        onCancelStop = vm::cancelStopNavigation,
                         connections = {
                             MainScreen(
                                 state = state, onRefreshHealth = vm::refreshHealth, onRefreshBattery = vm::refreshBattery,
                                 journey = journey, navigationConnection = navigationConnection, stopRequest = stopRequest,
                                 onRefreshNavigation = vm::refreshNavigation, onConfirmStop = vm::confirmStopNavigation,
                                 onCancelStop = vm::cancelStopNavigation,
+                                facilities = facilities, facilityAlert = facilityAlert,
+                                onRefreshFacilities = vm::refreshFacilities, onToggleFacilityDemo = vm::toggleFacilityDemo,
+                                onDismissFacilityAlert = vm::dismissFacilityAlert, onSelectFacility = vm::prepareStopNavigation,
                             )
                         },
                     )
@@ -125,6 +135,12 @@ fun MainScreen(
     onRefreshNavigation: () -> Unit,
     onConfirmStop: (String) -> Unit,
     onCancelStop: () -> Unit,
+    facilities: FacilityUiState,
+    facilityAlert: LastRestAreaAlert?,
+    onRefreshFacilities: () -> Unit,
+    onToggleFacilityDemo: () -> Unit,
+    onDismissFacilityAlert: () -> Unit,
+    onSelectFacility: (StopCandidate) -> Unit,
 ) {
     val type = LocalPleosTypography.current
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -144,6 +160,7 @@ fun MainScreen(
             )
             DrivingStatusBanner()
             NavigationStatusCard(journey, navigationConnection, stopRequest, onRefreshNavigation, onConfirmStop, onCancelStop)
+            FacilityStatusCard(facilities, facilityAlert, onRefreshFacilities, onToggleFacilityDemo, onDismissFacilityAlert, onSelectFacility)
             InfoCard(
                 title = stringResource(R.string.health_title),
                 detail = stringResource(R.string.health_source, HealthResponse.PATH),

@@ -37,15 +37,25 @@ data class StopCandidate(
     val routeAccess: RouteAccess = RouteAccess.UNKNOWN,
     val travelDurationSeconds: Long? = null,
     val distanceAlongRouteMeters: Long? = null,
+    /** Route-confirmed entrance/road coordinate; the catalog coordinate may be a facility centroid. */
+    val navigationLocation: GeoPoint? = null,
+    val journeyId: String? = null,
+    val accessVerifiedAtEpochMillis: Long? = null,
+    /** Optional ID supplied by a compatible navigation provider; never derived from a public catalog ID. */
+    val navigationPoiId: String? = null,
 ) {
     init {
         require(travelDurationSeconds == null || travelDurationSeconds >= 0)
         require(distanceAlongRouteMeters == null || distanceAlongRouteMeters >= 0)
+        require(journeyId == null || journeyId.isNotBlank())
+        require(accessVerifiedAtEpochMillis == null || accessVerifiedAtEpochMillis >= 0)
+        require(navigationPoiId == null || navigationPoiId.isNotBlank())
     }
 
     /** Demo facilities must not be sent to real navigation services. */
     val canRequestNavigation: Boolean
-        get() = origin != DataOrigin.DEMO && routeAccess == RouteAccess.CONFIRMED_ON_ROUTE
+        get() = (origin == DataOrigin.PUBLIC_DATA || origin == DataOrigin.NAVI_SDK) && routeAccess == RouteAccess.CONFIRMED_ON_ROUTE &&
+            navigationLocation != null && journeyId != null && accessVerifiedAtEpochMillis != null
 }
 
 @Serializable

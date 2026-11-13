@@ -50,7 +50,7 @@ class CareRepository(
         if (!mutex.tryLock()) return
         try {
             mutableState.value = state.value.copy(status = CareStoreStatus.LOADING, problem = null, notice = null)
-            val record = withContext(ioDispatcher) { store.read()?.let(CareJournal::normalize) }
+            val record = withContext(ioDispatcher) { store.read()?.let { CareJournal.normalize(it) } }
             mutableState.value = CareState(status = CareStoreStatus.READY, record = record, revision = state.value.revision + 1)
         } catch (e: CancellationException) {
             throw e
@@ -91,6 +91,17 @@ class CareRepository(
 
     suspend fun undoLatest() = change(CareNotice.UNDONE) { current ->
         CareJournal.undoLatest(current ?: throw CareException(CareProblem.PROFILE_REQUIRED))
+    }
+
+    /** Explicit caregiver timing inputs. Do not copy packing reserves or age defaults into rhythm forecasts. */
+    suspend fun saveTimingPreferences(feedMinutes: Int?, awakeMinutes: Int?, breakMinutes: Int?) = change(CareNotice.PROFILE_SAVED) { current ->
+        val record = current ?: throw CareException(CareProblem.PROFILE_REQUIRED)
+        if (!listOf(feedMinutes, awakeMinutes, breakMinutes).all { it == null || it in 30..720 }) {
+            throw CareException(CareProblem.INVALID_PROFILE)
+        }
+        record.copy(profile = record.profile.copy(preferences = record.profile.preferences.copy(
+            feedIntervalMinutes = feedMinutes, awakeWindowMinutes = awakeMinutes, seatedBreakMinutes = breakMinutes,
+        )))
     }
 
     suspend fun editEvent(id: String, atEpochMillis: Long, amountMl: Int?) = change(CareNotice.EDITED) { current ->
