@@ -1,6 +1,5 @@
 package com.hmgchallenge.app.departure
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -11,6 +10,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -29,21 +29,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.text.input.ImeAction
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
+import com.hmgchallenge.app.ui.components.CareGlyph
+import com.hmgchallenge.app.ui.components.CareSymbol
 import com.hmgchallenge.app.ui.theme.PleosMotion
 import com.hmgchallenge.app.ui.theme.PleosRoles.cardBorder
 import com.hmgchallenge.app.ui.theme.PleosRoles.cardContainer
@@ -64,21 +65,34 @@ internal fun PackingChecklist(state: DepartureUiState, actions: DepartureControl
     val record = state.preparation.record ?: return
     val evaluation = state.evaluation ?: return
     val plan = evaluation.packing
+    var editing by rememberSaveable(record.outingId) { mutableStateOf(false) }
+    var showBasis by rememberSaveable(record.outingId) { mutableStateOf(false) }
     CareCard(stringResource(R.string.packing_summary_title)) {
         DepartureText(stringResource(R.string.packing_preview_title, evaluation.checkedItems, evaluation.totalItems), style = PleosTheme.typography.titleLarge)
-        PackingBasis(plan)
+        PackingProgress(evaluation.checkedItems, evaluation.totalItems)
+        if (plan.needsQuantityConfirmation) DepartureText(stringResource(R.string.packing_intervals_needed), secondary = true)
+        if (plan.problem != PackingProblem.NONE) DepartureText(stringResource(when (plan.problem) {
+            PackingProblem.OUTING_RANGE_UNCONFIRMED -> R.string.packing_extra_required
+            PackingProblem.TRIP_TOO_LONG -> R.string.packing_duration_too_long
+            else -> R.string.packing_duration_unknown
+        }), secondary = true)
+        CareButton(stringResource(if (showBasis) R.string.ux_hide_packing_basis else R.string.ux_show_packing_basis), { showBasis = !showBasis },
+            Modifier.fillMaxWidth(), primary = false, selected = showBasis, tag = "packing-basis", selectionRole = Role.Button)
+        if (showBasis) PackingBasis(plan)
         CareButton(stringResource(R.string.packing_settings_open), onSettings, Modifier.fillMaxWidth(), primary = false, tag = "packing-settings")
     }
     record.items.forEach { item ->
         val checked = plan.isChecked(item, evaluation.evaluatedAtEpochMillis)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing), verticalAlignment = Alignment.CenterVertically) {
             PackingCheckRow(item, plan, checked, state.preparation.canWrite, { actions.toggleItem(item.id) }, Modifier.weight(1f))
-            CareButton(stringResource(R.string.packing_remove), { actions.removeItem(item.id) }, enabled = state.preparation.canWrite,
+            if (editing) CareButton(stringResource(R.string.packing_remove), { actions.removeItem(item.id) }, enabled = state.preparation.canWrite,
                 primary = false, tag = "packing-remove-${item.id}")
         }
     }
     CareButton(stringResource(R.string.packing_add), onAdd, Modifier.fillMaxWidth(), enabled = state.preparation.canWrite && record.items.size < 30, tag = "packing-add")
-    CareButton(stringResource(R.string.packing_restore), actions::restoreDefaults, Modifier.fillMaxWidth(),
+    CareButton(stringResource(if (editing) R.string.ux_finish_editing else R.string.ux_edit_items), { editing = !editing },
+        Modifier.fillMaxWidth(), primary = false, selected = editing, tag = "packing-edit-items", selectionRole = Role.Button)
+    if (editing) CareButton(stringResource(R.string.packing_restore), actions::restoreDefaults, Modifier.fillMaxWidth(),
         enabled = state.preparation.canWrite && record.items.size <= 25, primary = false)
 }
 
@@ -104,7 +118,7 @@ internal fun PackingBasis(plan: PackingPlan) {
 
 /** 96dp rows/48dp glyph, 24dp gaps. Touch minima supplement Pleos with Google car-app-quality UX-1. */
 @Composable
-private fun PackingCheckRow(item: PackingItem, plan: PackingPlan, checked: Boolean, enabled: Boolean, onToggle: () -> Unit, modifier: Modifier) {
+internal fun PackingCheckRow(item: PackingItem, plan: PackingPlan, checked: Boolean, enabled: Boolean, onToggle: () -> Unit, modifier: Modifier) {
     val colors = PleosTheme.colors
     val dimens = PleosTheme.dimens
     val shapes = PleosTheme.shapes
@@ -145,20 +159,33 @@ private fun PackingCheckRow(item: PackingItem, plan: PackingPlan, checked: Boole
     }
 }
 
+/** Progress is only checked items, never a guarantee that the child or trip is ready. */
+@Composable
+internal fun PackingProgress(checked: Int, total: Int) {
+    val dimens = PleosTheme.dimens
+    val fraction = if (total > 0) (checked.toFloat() / total).coerceIn(0f, 1f) else 0f
+    val colors = PleosTheme.colors
+    Box(Modifier.fillMaxWidth().height(dimens.progressTrackHeight).clip(PleosTheme.shapes.pillBar)
+        .background(colors.cardBorder)
+        .semantics { progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f) }) {
+        if (fraction > 0f) Box(Modifier.fillMaxWidth(fraction).height(dimens.progressTrackHeight).background(MaterialTheme.colorScheme.onSurface))
+    }
+}
+
 @Composable
 internal fun CheckGlyph(checked: Boolean) {
     val dimens = PleosTheme.dimens
     val shapes = PleosTheme.shapes
     val ink = MaterialTheme.colorScheme.onSurface
     val paper = MaterialTheme.colorScheme.surface
-    Canvas(Modifier.size(dimens.iconSize)) {
-        val radius = shapes.checkboxRadius.toPx()
-        drawRoundRect(if (checked) ink else paper, cornerRadius = CornerRadius(radius))
-        if (!checked) drawRoundRect(ink, cornerRadius = CornerRadius(radius), style = Stroke(dimens.strokeCheck.toPx()))
-        else {
-            drawLine(paper, Offset(size.width * .23f, size.height * .5f), Offset(size.width * .43f, size.height * .7f), dimens.strokeCheckMark.toPx())
-            drawLine(paper, Offset(size.width * .43f, size.height * .7f), Offset(size.width * .78f, size.height * .28f), dimens.strokeCheckMark.toPx())
-        }
+    Box(
+        Modifier.size(dimens.iconSize)
+            .clip(shapes.checkbox)
+            .background(if (checked) ink else paper)
+            .then(if (checked) Modifier else Modifier.border(dimens.strokeCheck, ink, shapes.checkbox)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) CareGlyph(CareSymbol.CHECK, tint = paper, selected = true)
     }
 }
 

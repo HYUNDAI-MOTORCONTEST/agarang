@@ -188,7 +188,7 @@
     <string name="departure_demo_title">출발 준비 체험</string>
     <string name="departure_driving_badge">주행 중 · 간단 예보</string>
     <string name="departure_driving_check">아기 반응과 돌봄을 확인해 주세요</string>
-    <string name="departure_driving_setup">준비물·설정은 주차 후 확인할 수 있어요.</string>
+    <string name="departure_driving_setup">준비물·기록·설정은 주차 후 확인할 수 있어요.</string>
     <string name="departure_driving_stop">도착 전 돌봄이 겹칠 수 있어요</string>
     <string name="departure_driving_title">돌봄 요약</string>
     <string name="departure_drive_unknown">주행 상태 미확인 · 입력 제한</string>
@@ -199,9 +199,9 @@
     <string name="departure_end_seating">착석 세션 종료</string>
     <string name="departure_feed_rhythm">평소 수유 간격</string>
     <string name="departure_first_day_detail">월령만으로 다음 돌봄 시각을 정하지 않아요. 준비물부터 확인해 보세요.</string>
-    <string name="departure_first_day_heading">기록 없이도 준비할 수 있어요</string>
+    <string name="departure_first_day_heading">준비물부터 확인해요</string>
     <string name="departure_first_detail">월령을 알려주시면 기록과 첫 외출 준비를 함께 확인할 수 있어요.</string>
-    <string name="departure_first_heading">우리 아이부터 알려주세요</string>
+    <string name="departure_first_heading">첫 외출을 준비해요</string>
     <string name="departure_forecast_detail">최근 기록과 평소 간격을 겹쳐 본 계획 예보예요. 아기 반응도 확인해 주세요.</string>
     <string name="departure_stale_care_detail">최근 수유 기록이 오래돼 예상 시각을 만들 수 없어요. 새 기록을 확인해 주세요.</string>
     <string name="departure_future_care_detail">수유 기록의 시각이 현재보다 뒤에 있어요. 기록 시각을 확인해 주세요.</string>
@@ -365,4 +365,24 @@
     <string name="response_demo_imminent">임박 예보 체험</string>
     <string name="response_demo_no_stops">정차 후보 없음 체험</string>
     <string name="response_demo_navi_failed">내비 실패 체험</string>
+    <string name="ux_home_title">출발 준비</string>
+    <string name="ux_driving_demo">주행 중 · 데모</string>
+    <string name="ux_restricted_demo">상태 미확인 · 데모 제한 모드</string>
+    <string name="ux_check_records">돌봄 기록 확인</string>
+    <string name="ux_show_basis">기록 근거 보기</string>
+    <string name="ux_hide_basis">기록 근거 접기</string>
+    <string name="ux_choice_care">돌봄 먼저</string>
+    <string name="ux_choice_stop">중간 정차</string>
+    <string name="ux_choice_now_detail">예보·준비물 확인</string>
+    <string name="ux_choice_care_detail">돌봄 후 출발</string>
+    <string name="ux_choice_stop_detail">가는 길 시설 확인</string>
+    <string name="ux_show_packing_basis">수량·계산 근거 보기</string>
+    <string name="ux_hide_packing_basis">수량·계산 근거 접기</string>
+    <string name="ux_edit_items">목록 편집</string>
+    <string name="ux_finish_editing">편집 마치기</string>
+    <string name="ux_response_entry_detail">울음이 들리면 함께 확인해요</string>
+    <string name="ux_response_heading">안전하게 정차한 뒤 확인해요</string>
+    <string name="ux_response_uncertainty">기록만으로 울음의 원인을 단정할 수 없어요.</string>
+    <string name="ux_response_evidence_summary">수유·수면·착석 기록을 함께 확인할 수 있어요.</string>
+    <string name="ux_stop_time">%1$s · 약 %2$d분</string>
 </resources>

@@ -7,14 +7,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
+import com.hmgchallenge.app.care.CareActionTile
 import com.hmgchallenge.app.care.CareCard
 import com.hmgchallenge.app.ui.theme.PleosAccentTone
 import com.hmgchallenge.app.ui.theme.PleosRoles.accentColor
 import com.hmgchallenge.app.ui.theme.PleosTheme
+import com.hmgchallenge.app.ui.components.CareSymbol
 import com.hmgchallenge.shared.care.CareEventType
 import com.hmgchallenge.shared.care.CareJournal
 import com.hmgchallenge.shared.facility.StopPlanType
@@ -47,8 +54,8 @@ internal fun CryResponseEntry(state: DepartureUiState, actions: DepartureControl
             ResponseNotice.CANCELLED -> DepartureText(stringResource(R.string.response_cancelled), secondary = true)
             else -> Unit
         }
-        CareButton(stringResource(R.string.response_start), actions::startResponse,
-            Modifier.fillMaxWidth().heightIn(min = dimens.heroButtonHeight), tag = "response-start")
+        CareActionTile(stringResource(R.string.response_start), stringResource(R.string.ux_response_entry_detail), CareSymbol.SOOTHE,
+            actions::startResponse, Modifier.fillMaxWidth(), tag = "response-start")
     }
 }
 
@@ -68,9 +75,10 @@ internal fun CryResponseScreen(
     val type = PleosTheme.typography
     val dimens = PleosTheme.dimens
     val colors = PleosTheme.colors
+    var showEvidence by rememberSaveable(state.response.episodeId) { mutableStateOf(false) }
     CareCard(stringResource(R.string.response_title), accentColor = colors.accentColor(PleosAccentTone.WARNING)) {
-        DepartureText(stringResource(R.string.response_safe_stop), style = type.titleLarge)
-        if (!restricted) DepartureText(stringResource(R.string.response_limit), secondary = true)
+        DepartureText(stringResource(R.string.ux_response_heading), style = type.titleLarge)
+        if (!restricted) DepartureText(stringResource(R.string.ux_response_uncertainty), secondary = true)
         else {
             val imminent = assessment?.evidence?.firstOrNull { it.stage == ForecastStage.IMMINENT }
             DepartureText(stringResource(when (imminent?.need) {
@@ -88,9 +96,16 @@ internal fun CryResponseScreen(
     if (state.response.notice == ResponseNotice.RECORD_FAILED) DepartureText(stringResource(R.string.response_record_failed))
     val evidence: @Composable () -> Unit = {
         if (!restricted) {
-            DepartureText(stringResource(R.string.response_evidence_title), style = type.titleSmall)
-            assessment?.evidence?.forEach { ResponseEvidenceCard(it) }
-            if (assessment?.limited != false) DepartureText(stringResource(R.string.response_insufficient), secondary = true)
+            CareCard(stringResource(R.string.response_evidence_title)) {
+                if (assessment?.limited != false) DepartureText(stringResource(R.string.response_insufficient), secondary = true)
+                else DepartureText(stringResource(R.string.ux_response_evidence_summary), secondary = true)
+                CareButton(stringResource(if (showEvidence) R.string.ux_hide_basis else R.string.ux_show_basis), { showEvidence = !showEvidence },
+                    Modifier.fillMaxWidth(), primary = false, selected = showEvidence, tag = "response-evidence", selectionRole = Role.Button)
+                if (showEvidence) {
+                    DepartureText(stringResource(R.string.response_limit), secondary = true)
+                    assessment?.evidence?.forEach { ResponseEvidenceCard(it) }
+                }
+            }
         }
     }
     val plans: @Composable () -> Unit = {
@@ -114,16 +129,17 @@ internal fun CryResponseScreen(
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (!restricted && maxWidth >= dimens.breakpointTwoColumn) Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { evidence() }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { plans(); ResponseCareCompletion(state, actions, onProfile) }
+            Column(Modifier.weight(1.15f), verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { plans() }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { evidence(); ResponseCareCompletion(state, actions, onProfile) }
         } else Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
-            if (!restricted) evidence()
             plans()
+            if (!restricted) evidence()
             if (!restricted) ResponseCareCompletion(state, actions, onProfile)
         }
     }
     DepartureText(stringResource(R.string.response_emergency), secondary = true)
-    CareButton(stringResource(R.string.response_cancel), { onCancelNavigation(); actions.finishResponse() }, Modifier.fillMaxWidth(),
+    // While restricted, the fixed header Back closes this response without a scroll to the end.
+    if (!restricted) CareButton(stringResource(R.string.response_cancel), { onCancelNavigation(); actions.finishResponse() }, Modifier.fillMaxWidth(),
         primary = false, enabled = !state.responseRecording, tag = "response-cancel")
 }
 
@@ -168,17 +184,17 @@ private fun ResponseStopChoices(state: DepartureUiState, actions: DepartureContr
     val plans = state.stops
     CareCard(stringResource(R.string.response_stop_title)) {
         if (!restricted) DepartureText(stringResource(R.string.response_stop_detail), secondary = true)
-        listOf(StopPlanType.FULL_CARE to plans?.fullCare, StopPlanType.NEAREST_SAFE_STOP to plans?.nearestSafeStop).forEach { (kind, plan) ->
+        listOf(StopPlanType.NEAREST_SAFE_STOP to plans?.nearestSafeStop, StopPlanType.FULL_CARE to plans?.fullCare).forEach { (kind, plan) ->
             val candidate = plan?.candidates?.firstOrNull()
             val title = stringResource(if (kind == StopPlanType.FULL_CARE) R.string.response_full_care else R.string.response_nearest)
             if (candidate == null) DepartureText(title + " · " + stringResource(R.string.response_no_stop)) else {
                 val seconds = candidate.travelDurationSeconds!!
                 val minutes = seconds / 60 + if (seconds % 60 > 0) 1 else 0
-                if (!restricted) DepartureText(title + " · " + candidate.facility.name)
-                CareButton(stringResource(R.string.response_select_stop, title, minutes), {
+                CareActionTile(stringResource(R.string.ux_stop_time, title, minutes), candidate.facility.name,
+                    if (kind == StopPlanType.FULL_CARE) CareSymbol.CARE else CareSymbol.STOP, {
                     onCancelNavigation(); actions.selectResponseStop(kind)?.let(onSelectNavigation)
                 }, Modifier.fillMaxWidth(), enabled = stopRequest.phase !in listOf(StopRequestPhase.SUBMITTING, StopRequestPhase.OUTCOME_UNKNOWN),
-                    primary = kind == StopPlanType.NEAREST_SAFE_STOP, tag = "response-select-${kind.name}")
+                    selected = state.response.selected?.type == kind, tag = "response-select-${kind.name}")
             }
         }
         if (plans?.fullCare?.candidates.isNullOrEmpty() && plans?.nearestSafeStop?.candidates.isNullOrEmpty()) {
@@ -203,7 +219,12 @@ private fun ResponseCareCompletion(state: DepartureUiState, actions: DepartureCo
                 (if (sleeping) CareEventType.SLEEP_END else CareEventType.SLEEP_START) to
                     (if (sleeping) R.string.departure_record_awake else R.string.departure_record_sleep)).forEach { (kind, label) ->
                 CareButton(stringResource(label), { actions.recordResponseCare(kind) }, Modifier.fillMaxWidth(),
-                    enabled = state.care.canWrite && !state.responseRecording, primary = false, tag = "response-record-${kind.name}")
+                    enabled = state.care.canWrite && !state.responseRecording, primary = false, tag = "response-record-${kind.name}",
+                    leadingIcon = when (kind) {
+                        CareEventType.FEED -> CareSymbol.FEED
+                        CareEventType.DIAPER -> CareSymbol.DIAPER
+                        else -> CareSymbol.SLEEP
+                    })
             }
         }
         CareButton(stringResource(R.string.response_complete_without_record), { actions.finishResponse(true) }, Modifier.fillMaxWidth(),

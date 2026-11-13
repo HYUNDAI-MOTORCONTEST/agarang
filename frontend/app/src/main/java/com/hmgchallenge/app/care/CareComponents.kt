@@ -33,6 +33,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import com.hmgchallenge.app.driving.LocalUxRestrictions
+import com.hmgchallenge.app.ui.components.CareGlyph
+import com.hmgchallenge.app.ui.components.CareSymbol
 import com.hmgchallenge.app.ui.theme.PleosMotion
 import com.hmgchallenge.app.ui.theme.PleosRoles.cardBorder
 import com.hmgchallenge.app.ui.theme.PleosRoles.cardContainer
@@ -108,6 +110,8 @@ internal fun CareButton(
     tag: String? = null,
     compact: Boolean = false,
     description: String? = null,
+    leadingIcon: CareSymbol? = null,
+    selectionRole: Role = Role.RadioButton,
 ) {
     val colors = PleosTheme.colors
     val dimens = PleosTheme.dimens
@@ -121,7 +125,7 @@ internal fun CareButton(
         pressed = pressed,
     )
     val input = if (selected != null) {
-        Modifier.selectable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+        Modifier.selectable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = selectionRole, onClick = onClick)
     } else {
         Modifier.clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
     }
@@ -155,20 +159,22 @@ internal fun CareButton(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (style.indicator != null) {
+        if (style.indicator != null || leadingIcon != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(dimens.microSpacing),
             ) {
-                Box(
+                if (style.indicator != null) Box(
                     Modifier
                         .width(dimens.tabIndicatorWidth)
                         .height(dimens.tabIndicatorHeight)
                         .clip(shapes.pillBar)
                         .background(style.indicator),
                 )
+                if (leadingIcon != null) CareGlyph(leadingIcon, tint = style.content, selected = selected == true)
                 Text(
                     text = LocalUxRestrictions.current.limit(label),
+                    modifier = Modifier.weight(1f, fill = false),
                     style = PleosTheme.typography.labelMedium,
                     color = style.content,
                     maxLines = 2,

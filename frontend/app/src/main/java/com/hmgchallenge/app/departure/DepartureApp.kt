@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +39,8 @@ import com.hmgchallenge.app.care.CareScreen
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
 import com.hmgchallenge.app.ui.theme.PleosTheme
+import com.hmgchallenge.app.ui.components.CareSymbol
+import com.hmgchallenge.app.ui.components.CareGlyph
 import com.hmgchallenge.shared.care.CareNotice
 import com.hmgchallenge.shared.care.CareStoreStatus
 import com.hmgchallenge.shared.departure.DepartureChoice
@@ -163,7 +166,7 @@ fun DepartureApp(
             ) {
                 CryResponseEntry(state, actions)
                 ResponseNavigationStatus(shownStopRequest, true, onConfirmStop, ::cancelNavigation)
-                DrivingDeparture(state, actions)
+                DrivingDeparture(state)
             }
         } else {
             val scroller = key(page) { rememberScrollState() }
@@ -190,17 +193,17 @@ fun DepartureApp(
                             .fillMaxSize()
                             .verticalScroll(scroller)
                             .padding(dimens.contentInset),
-                        verticalArrangement = Arrangement.spacedBy(dimens.itemSpacing),
+                        verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
                     ) {
                         DepartureMessage(state) { actions.load(); onReloadCare() }
                         ResponseNavigationStatus(shownStopRequest, false, onConfirmStop, ::cancelNavigation)
-                        if (page == DeparturePage.HOME) CryResponseEntry(state, actions)
                         when (page) {
                             DeparturePage.HOME -> DepartureHome(state, { choice -> open(when (choice) {
                                 DepartureChoice.NOW -> DeparturePage.NOW
                                 DepartureChoice.AFTER_CARE -> DeparturePage.CARE_FIRST
                                 DepartureChoice.STOP_ON_WAY -> DeparturePage.STOPS
-                            }) }, { open(DeparturePage.CHECKLIST) }, { open(DeparturePage.RECORDS) }, actions::recordCare, actions::undoCare)
+                            }) }, { open(DeparturePage.CHECKLIST) }, { open(DeparturePage.RECORDS) }, actions::recordCare, actions::undoCare,
+                                actions::toggleItem) { CryResponseEntry(state, actions) }
                             DeparturePage.CHECKLIST -> PackingChecklist(state, actions, { open(DeparturePage.PACKING) }, { open(DeparturePage.ADD_ITEM) })
                             DeparturePage.PACKING -> state.preparation.record?.let { record -> PackingSettingsScreen(record, state.preparation.canWrite) { settings ->
                                 awaitPreparation(DeparturePage.CHECKLIST) { actions.saveSettings(settings) }
@@ -229,11 +232,18 @@ fun DepartureApp(
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing)) {
-                listOf(DeparturePage.HOME to R.string.departure_nav_home, DeparturePage.CHECKLIST to R.string.departure_nav_packing,
-                    DeparturePage.RECORDS to R.string.departure_nav_records).forEach { (destination, label) ->
-                    CareButton(stringResource(label), { open(destination) }, Modifier.weight(1f), primary = false,
-                        selected = page == destination, tag = "departure-tab-${destination.name}")
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val showIcons = maxWidth >= dimens.breakpointHorizontalChoices
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
+                    listOf(DeparturePage.HOME to R.string.departure_nav_home, DeparturePage.CHECKLIST to R.string.departure_nav_packing,
+                        DeparturePage.RECORDS to R.string.departure_nav_records).forEach { (destination, label) ->
+                        CareButton(stringResource(label), { open(destination) }, Modifier.weight(1f), primary = false,
+                            selected = page == destination, tag = "departure-tab-${destination.name}", leadingIcon = if (!showIcons) null else when (destination) {
+                                DeparturePage.HOME -> CareSymbol.HOME
+                                DeparturePage.CHECKLIST -> CareSymbol.CHECKLIST
+                                else -> CareSymbol.CARE
+                            })
+                    }
                 }
             }
         }
@@ -247,10 +257,10 @@ private fun DepartureHeader(state: DepartureUiState, page: DeparturePage, restri
     val profile = state.care.record?.profile
     val ux = LocalUxRestrictions.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing), verticalAlignment = Alignment.CenterVertically) {
-        if (!restricted && (responding || page != DeparturePage.HOME)) CareButton(stringResource(R.string.care_back), onBack, Modifier.width(dimens.headerBackWidth), primary = false)
+        if (responding || (!restricted && page != DeparturePage.HOME)) CareButton(stringResource(R.string.care_back), onBack, Modifier.width(dimens.headerBackWidth), primary = false)
         Column(Modifier.weight(1f)) {
             DepartureText(stringResource(if (responding) R.string.response_title else when (page) {
-                DeparturePage.HOME -> R.string.app_name
+                DeparturePage.HOME -> R.string.ux_home_title
                 DeparturePage.CHECKLIST -> R.string.departure_nav_packing
                 DeparturePage.RECORDS -> R.string.departure_nav_records
                 DeparturePage.PACKING -> R.string.packing_settings_open
@@ -264,10 +274,13 @@ private fun DepartureHeader(state: DepartureUiState, page: DeparturePage, restri
                 else -> R.string.departure_tools
             }), style = type.titleLarge, maxLines = 1)
             val context = when {
+                restricted && state.isDemo -> stringResource(if (ux.source == UxRestrictionsState.Source.CAR_SERVICE)
+                    R.string.ux_driving_demo else R.string.ux_restricted_demo)
+                restricted -> stringResource(if (ux.source == UxRestrictionsState.Source.CAR_SERVICE)
+                    R.string.departure_driving_badge else R.string.departure_drive_unknown)
                 state.isDemo -> stringResource(R.string.departure_demo_badge)
                 state.journey.readyValue?.isSimulation == true -> stringResource(R.string.departure_native_simulation)
                 ux.source != UxRestrictionsState.Source.CAR_SERVICE -> stringResource(R.string.departure_drive_unknown)
-                restricted -> stringResource(R.string.departure_driving_badge)
                 profile != null -> stringResource(R.string.departure_baby_context, profile.monthAge)
                 else -> stringResource(R.string.departure_welcome)
             }
@@ -296,19 +309,28 @@ private fun DepartureMessage(state: DepartureUiState, onReload: () -> Unit) {
 }
 
 @Composable
-private fun DrivingDeparture(state: DepartureUiState, actions: DepartureController) {
+private fun DrivingDeparture(state: DepartureUiState) {
     val type = PleosTheme.typography
+    val dimens = PleosTheme.dimens
     val forecast = state.evaluation?.forecast
     val ux = LocalUxRestrictions.current
     CareCard(stringResource(R.string.departure_driving_title)) {
         DepartureText(stringResource(if (forecast?.journey?.careBeforeArrival?.isNotEmpty() == true) R.string.departure_driving_stop else R.string.departure_driving_check),
             style = type.titleLarge)
-        DepartureText(stringResource(R.string.departure_arrival) + " · " + timeText(forecast?.journey?.estimatedArrivalAtEpochMillis),
-            style = type.titleSmall)
         val feed = forecast?.needs?.firstOrNull { it.need == CareNeed.FEED }
-        DepartureText(stringResource(R.string.departure_next_feed) + " · " + estimateText(feed?.estimate))
+        Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.microSpacing)) {
+                CareGlyph(CareSymbol.ROUTE)
+                DepartureText(stringResource(R.string.departure_arrival), secondary = true)
+                DepartureText(timeText(forecast?.journey?.estimatedArrivalAtEpochMillis), style = type.titleSmall)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.microSpacing)) {
+                CareGlyph(CareSymbol.FEED)
+                DepartureText(stringResource(R.string.departure_next_feed), secondary = true)
+                DepartureText(estimateText(feed?.estimate), style = type.titleSmall)
+            }
+        }
         DepartureText(stringResource(if (ux.source == UxRestrictionsState.Source.CAR_SERVICE) R.string.departure_driving_setup
             else R.string.departure_unknown_setup), secondary = true)
     }
-    QuickCareRow(state, actions::recordCare, actions::undoCare)
 }
