@@ -38,6 +38,10 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                // 차량 보안 요건(minSdk 28: 서명 키 로테이션·리니지)에 맞춰 v3 서명을 명시적으로 넣는다.
+                // AGP 기본값으로는 minSdk 28에서 v2만 들어간다(GCP 빌드 apksigner로 확인).
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
