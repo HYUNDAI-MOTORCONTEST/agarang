@@ -246,25 +246,27 @@ class NavigationRepository(
         if (!activeRoute || awaitingState) return
         val now = clock()
         val previous = waypoints.value.readyValue
-        // The current emulator service can return a placeholder waypoint at (0, 0). It cannot
-        // establish valid/available slots. Preserve ETA, but never discard it as an empty slot or
-        // submit a write that could overwrite an unknown waypoint. Explicit demo fixtures may use 0.
-        val placeholder = origin == DataOrigin.NAVI_SDK && values.any {
-            it.location.latitudeDegrees == 0.0 && it.location.longitudeDegrees == 0.0
+        val normalized = values.map { waypoint ->
+            val normalizedPoiId = waypoint.poiId?.trim()?.takeIf(String::isNotBlank)
+            if (normalizedPoiId == waypoint.poiId) waypoint else waypoint.copy(poiId = normalizedPoiId)
         }
-        if (values.size > 2 || now < 0 || placeholder) {
+        // An unidentified (0, 0) placeholder without a provider POI ID cannot establish valid slots.
+        // Preserve ETA, but block writes rather than overwriting an unknown waypoint. When the Pleos
+        // service omits coordinates as (0, 0) while returning a valid poiId, accept it as a POI slot.
+        val unidentifiedPlaceholder = origin == DataOrigin.NAVI_SDK && normalized.any(::isUnidentifiedPlaceholder)
+        if (normalized.size > 2 || now < 0 || unidentifiedPlaceholder) {
             mutableWaypoints.value = unavailable(DataStatus.FAILED)
             awaitingWaypoints = false
             abortStop(StopRequestProblem.REQUEST_FAILED)
             finishRead()
             return
         }
-        mutableWaypoints.value = DataSnapshot(origin, DataStatus.READY, values.toList(), now)
+        mutableWaypoints.value = DataSnapshot(origin, DataStatus.READY, normalized, now)
         awaitingWaypoints = false
-        if (previous != null && previous != values && stopRequest.value.phase == StopRequestPhase.AWAITING_CONFIRMATION) {
+        if (previous != null && previous != normalized && stopRequest.value.phase == StopRequestPhase.AWAITING_CONFIRMATION) {
             abortStop(StopRequestProblem.ROUTE_CHANGED)
         }
-        resolveSubmission(values)
+        resolveSubmission(normalized)
         finishRead()
     }
 
@@ -439,9 +441,19 @@ class NavigationRepository(
     private fun <T> staleOrFailed(previous: DataSnapshot<T>, fallback: DataStatus): DataSnapshot<T> =
         if (previous.value != null) previous.copy(status = DataStatus.STALE) else unavailable(fallback)
 
-    private fun matches(waypoint: NavigationWaypoint, candidate: StopCandidate) =
-        waypoint.location == (candidate.navigationLocation ?: candidate.facility.location) &&
+    private fun hasZeroCoordinates(waypoint: NavigationWaypoint): Boolean =
+        waypoint.location.latitudeDegrees == 0.0 && waypoint.location.longitudeDegrees == 0.0
+
+    private fun isUnidentifiedPlaceholder(waypoint: NavigationWaypoint): Boolean =
+        hasZeroCoordinates(waypoint) && waypoint.poiId == null
+
+    private fun matches(waypoint: NavigationWaypoint, candidate: StopCandidate): Boolean {
+        if (origin == DataOrigin.NAVI_SDK && hasZeroCoordinates(waypoint)) {
+            return candidate.navigationPoiId != null && waypoint.poiId == candidate.navigationPoiId
+        }
+        return waypoint.location == (candidate.navigationLocation ?: candidate.facility.location) &&
             (candidate.navigationPoiId == null || waypoint.poiId == candidate.navigationPoiId)
+    }
 
     private fun candidateMatchesJourney(candidate: StopCandidate): Boolean {
         if (origin == DataOrigin.DEMO) return candidate.origin == DataOrigin.DEMO
