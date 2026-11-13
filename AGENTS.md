@@ -1,7 +1,7 @@
 # AGENTS.md
 
 현대자동차그룹 차량용 앱 개발 공모전 출품작. Pleos Connect(Android Automotive OS 기반 인포테인먼트)용 Kotlin 모노레포다.
-앱 이름·팀명은 확정 전이다(README 1항 참고).
+팀명·앱 이름은 **아가랑**이다(README 1항).
 
 > 이 파일이 에이전트 지침의 **단일 원본**이다. Codex는 이 파일을 바로 읽고, Claude Code는 `CLAUDE.md`의 `@AGENTS.md` import로 읽는다.
 > 공통 규칙은 여기에만 쓰고, 도구 전용 내용만 `CLAUDE.md`(Claude Code)·`.codex/config.toml`(Codex)에 둔다.
@@ -21,7 +21,7 @@
 | `frontend/sandbox/` | `:frontend:sandbox` | 로컬 테스트용 샌드박스 앱 "아가랑 미니"(`com.hmgchallenge.sandbox`), 제출 대상 아님. 실행 `scripts/run-app.sh sandbox` |
 | `backend/` | `:backend` | Spring Boot(Kotlin) API 서버, 포트 8081 |
 | `shared/` | `:shared` | 앱·서버 공용 DTO(순수 Kotlin JVM, kotlinx.serialization) |
-| `apk/` | - | 제출용 release APK(`apk/팀명_앱이름_release.apk`) |
+| `apk/` | - | 제출용 release APK(`apk/아가랑_아가랑_release.apk`) |
 | `docs/guides/` | - | 차량 UI·개발 가이드 요약(직접 쓴 요약 + 원문 URL) |
 | `docs/contest/` | - | 공모전 규칙·일정·제출물·심사 기준·제출 전 체크리스트(`rules.md`) |
 | `scripts/` | - | 개발환경 세팅·에뮬레이터·Virtual Console·캡처·앱 실행 스크립트(bash) |
@@ -76,7 +76,7 @@ adb logcat -s HmgApp                 # 앱 로그
 - **minSdk 28 이상**(차량 보안 요건: 서명 키 로테이션·리니지).
 - **가로·세로 레이아웃 모두 지원**: `screenOrientation`을 고정하지 않는다. Pleos는 portrait(window 1개)와 landscape(window 2개)를 오가며, 사용자가 window 크기를 바꿀 수 있다.
 - **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 심사를 통과하지 못한다. 현재 선언: `CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`(NaviHelper 별도 신청 불필요는 공식 문서 확인, 설치별 실제 권한은 호출 전 확인).
-- **제출 APK**: 실행 가능한 release 빌드를 `apk/팀명_앱이름_release.apk`로 둔다(용량 초과 시 GitHub Releases).
+- **제출 APK**: 실행 가능한 release 빌드를 `apk/아가랑_아가랑_release.apk`로 둔다(용량 초과 시 GitHub Releases).
 - **README 필수 4항목**: 앱 이름·한 줄 소개 / 실행 방법 / 테스트 환경·필요한 설정 / APK 위치 또는 Release 링크. 이 4개 섹션을 지우거나 순서를 바꾸지 않는다.
 - **익명성·보안**: 레포·APK·커밋 메시지·스크린샷에 실명, 연락처, 이메일, 소속, 계정 정보, API 키, 서명 키를 넣지 않는다. 키는 환경변수로만 다루고 `.env*`, `*.jks`, `keystore.properties`는 커밋하지 않는다.
 

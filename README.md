@@ -1,12 +1,12 @@
-# HMG 차량 앱 (가칭)
+# 아가랑
 
 > 현대자동차그룹 차량용 앱 개발 공모전 출품용 Pleos Connect(Android Automotive OS) 앱 모노레포.
-> 앱 이름·팀명은 확정 전입니다. 개인 실명·계정 정보는 이 저장소에 넣지 않습니다(공모전 익명성 규정).
+> 팀명·앱 이름: 아가랑. 개인 실명·계정 정보는 이 저장소에 넣지 않습니다(공모전 익명성 규정).
 
 ## 1. 앱 이름 및 한 줄 소개
 
-- **앱 이름**: (확정 예정)
-- **한 줄 소개**: (확정 예정)
+- **앱 이름**: 아가랑
+- **한 줄 소개**: 아기와 함께 차로 나설 때, 수유·기저귀·수면 기록으로 출발 시점과 준비물을 예보하고 아기가 울면 가까운 정차지를 내비 경유지로 연결해 주는 Pleos Connect 앱
 
 ## 2. 실행 방법
 
@@ -14,7 +14,7 @@
 
 ```bash
 adb devices                                  # Pleos Connect 에뮬레이터(emulator-5554 등) 확인
-adb install -r apk/팀명_앱이름_release.apk    # 제출용 release APK 설치
+adb install -r apk/아가랑_아가랑_release.apk    # 제출용 release APK 설치(서버 없이 동작)
 adb shell am start -n com.hmgchallenge.app/.MainActivity
 ```
 
@@ -85,12 +85,12 @@ scripts/run-app.sh -Phmg.backendUrl=http://10.0.2.2:9090
 | 에뮬레이터 | Pleos Connect Emulator v2.1.0 (AVD `Pleos_Connect_v2.1.0`, API 34, Automotive, Cold boot, RAM 4GB) |
 | 앱 SDK | minSdk 28 / compileSdk 37 / targetSdk 36 |
 | Pleos SDK | Vehicle SDK `ai.pleos.playground:Vehicle:2.3.2` (Maven: `https://nexus-playground.pleos.ai/repository/maven-releases/`) |
-| 사용 권한 | `pleos.car.permission.CAR_ENERGY` (배터리 잔량). 운전 중 제한(CarUxRestrictions) 구독은 권한이 필요 없음 |
+| 사용 권한 | `pleos.car.permission.CAR_ENERGY`(배터리 잔량), `NAVI_ROUTE`(경로·ETA 조회), `NAVI_ROUTE_SEARCH`(정차지 경유지 등록). 운전 중 제한(CarUxRestrictions) 구독은 권한이 필요 없음 |
 | 차량 API | AAOS `android.car` (`useLibrary("android.car")`, Activity `distractionOptimized` 선언) |
 | 글꼴 | Asta Sans v1.000 (42dot, SIL OFL 1.1) 앱 내장 — 아래 "라이선스" 참고 |
 | JDK | 17 이상 (개발 환경 확인: Android Studio 내장 JBR 25) |
 | 빌드 도구 | Gradle 9.8.2(wrapper), AGP 9.4.1, Kotlin 2.4.21 |
-| 백엔드 | Spring Boot 4.1.2, 포트 8081 |
+| 백엔드 | Spring Boot 4.1.2, 포트 8081 (개발용. 제출 release APK는 공개 시설·경로 접근성 데이터를 앱에 내장해 서버 없이 동작) |
 
 필요한 설정
 
@@ -108,8 +108,8 @@ scripts/run-app.sh -Phmg.backendUrl=http://10.0.2.2:9090
 
 ## 4. APK 파일 위치 또는 GitHub Release 링크
 
-- 저장소 내 `apk/` 폴더: `apk/팀명_앱이름_release.apk` (제출 전 추가 예정)
-- 용량 초과 시 GitHub Releases 링크: (추가 예정)
+- 저장소 내 `apk/` 폴더: [`apk/아가랑_아가랑_release.apk`](apk/아가랑_아가랑_release.apk) (release 빌드, v2·v3 서명, 약 49MB)
+- GitHub 파일 크기 한도(100MB) 안이라 별도 Releases 링크는 쓰지 않습니다.
 
 ---
 
@@ -117,7 +117,7 @@ scripts/run-app.sh -Phmg.backendUrl=http://10.0.2.2:9090
 
 ```
 .
-├── apk/                 # 제출용 release APK (apk/팀명_앱이름_release.apk)
+├── apk/                 # 제출용 release APK (apk/아가랑_아가랑_release.apk)
 ├── frontend/app/        # :frontend:app  Android Automotive 앱 (Kotlin + Jetpack Compose)
 ├── frontend/sandbox/    # :frontend:sandbox  로컬 테스트용 샌드박스 앱 (아가랑 미니), 제출 대상 아님
 ├── backend/             # :backend       Spring Boot(Kotlin) API 서버
@@ -202,4 +202,5 @@ adb logcat -s HmgApp
 ## 참고
 
 - release 서명 키는 저장소에 포함하지 않습니다(`*.jks`, `*.keystore`, `keystore.properties`는 gitignore).
-- release 빌드의 백엔드 주소(`BACKEND_BASE_URL`)는 `frontend/app/build.gradle.kts`에서 실제 HTTPS 주소로 바꿔야 합니다.
+- release 빌드는 서버를 쓰지 않습니다(`BUNDLED_FACILITY_DATA=true`, `backend/src/main/resources/facilities/*.json`을 assets로 포함). debug에서 같은 동작을 보려면 `-Phmg.bundledData=true`.
+- release 서명은 `HMG_RELEASE_STORE_FILE`·`HMG_RELEASE_STORE_PASSWORD`·`HMG_RELEASE_KEY_ALIAS`·`HMG_RELEASE_KEY_PASSWORD` 환경변수가 모두 있을 때만 적용됩니다.
