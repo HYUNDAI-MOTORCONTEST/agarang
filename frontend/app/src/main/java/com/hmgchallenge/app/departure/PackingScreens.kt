@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,11 +41,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosMotion
+import com.hmgchallenge.app.ui.theme.PleosRoles.cardBorder
+import com.hmgchallenge.app.ui.theme.PleosRoles.cardContainer
+import com.hmgchallenge.app.ui.theme.PleosRoles.nestedContainer
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.departure.DepartureRecord
 import com.hmgchallenge.shared.departure.PackingDurationSource
 import com.hmgchallenge.shared.departure.PackingItem
@@ -58,17 +60,18 @@ import com.hmgchallenge.shared.departure.SupplyKind
 
 @Composable
 internal fun PackingChecklist(state: DepartureUiState, actions: DepartureController, onSettings: () -> Unit, onAdd: () -> Unit) {
+    val dimens = PleosTheme.dimens
     val record = state.preparation.record ?: return
     val evaluation = state.evaluation ?: return
     val plan = evaluation.packing
     CareCard(stringResource(R.string.packing_summary_title)) {
-        DepartureText(stringResource(R.string.packing_preview_title, evaluation.checkedItems, evaluation.totalItems), style = LocalPleosTypography.current.titleLarge)
+        DepartureText(stringResource(R.string.packing_preview_title, evaluation.checkedItems, evaluation.totalItems), style = PleosTheme.typography.titleLarge)
         PackingBasis(plan)
         CareButton(stringResource(R.string.packing_settings_open), onSettings, Modifier.fillMaxWidth(), primary = false, tag = "packing-settings")
     }
     record.items.forEach { item ->
         val checked = plan.isChecked(item, evaluation.evaluatedAtEpochMillis)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing), verticalAlignment = Alignment.CenterVertically) {
             PackingCheckRow(item, plan, checked, state.preparation.canWrite, { actions.toggleItem(item.id) }, Modifier.weight(1f))
             CareButton(stringResource(R.string.packing_remove), { actions.removeItem(item.id) }, enabled = state.preparation.canWrite,
                 primary = false, tag = "packing-remove-${item.id}")
@@ -81,8 +84,9 @@ internal fun PackingChecklist(state: DepartureUiState, actions: DepartureControl
 
 @Composable
 internal fun PackingBasis(plan: PackingPlan) {
+    val type = PleosTheme.typography
     DepartureText(stringResource(if (plan.scope == PackingScope.OUTBOUND) R.string.packing_scope_outbound else R.string.packing_scope_outing),
-        style = LocalPleosTypography.current.bodyLargeStrong)
+        style = type.bodyLargeStrong)
     DepartureText(plan.durationMinutes?.let { stringResource(R.string.packing_duration, it) } ?: stringResource(when (plan.problem) {
         PackingProblem.OUTING_RANGE_UNCONFIRMED -> R.string.packing_extra_required
         PackingProblem.TRIP_TOO_LONG -> R.string.packing_duration_too_long
@@ -95,25 +99,44 @@ internal fun PackingBasis(plan: PackingPlan) {
         PackingDurationSource.UNKNOWN -> R.string.packing_source_unknown
     }), secondary = true)
     if (plan.needsQuantityConfirmation) DepartureText(stringResource(R.string.packing_intervals_needed), secondary = true)
-    else DepartureText(stringResource(R.string.packing_counts, plan.feedServings!!, plan.diapers!!), style = LocalPleosTypography.current.titleSmall)
+    else DepartureText(stringResource(R.string.packing_counts, plan.feedServings!!, plan.diapers!!), style = type.titleSmall)
 }
 
 /** 96dp rows/48dp glyph, 24dp gaps. Touch minima supplement Pleos with Google car-app-quality UX-1. */
 @Composable
 private fun PackingCheckRow(item: PackingItem, plan: PackingPlan, checked: Boolean, enabled: Boolean, onToggle: () -> Unit, modifier: Modifier) {
+    val colors = PleosTheme.colors
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val description = stringResource(if (checked) R.string.packing_checked else R.string.packing_unchecked)
-    Row(modifier.sizeIn(minHeight = 96.dp).semantics { stateDescription = description }
-        .toggleable(checked, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Checkbox, onValueChange = { onToggle() })
-        .graphicsLayer {
-            val scale = if (pressed && enabled) .95f else 1f
-            scaleX = scale; scaleY = scale
-        }.clip(RoundedCornerShape(24.dp)).background(if (pressed) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface)
-        .padding(24.dp).testTag("packing-check-${item.id}"), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+    val rowBackground = when {
+        pressed -> colors.surface_accent
+        checked -> colors.cardContainer
+        else -> colors.nestedContainer
+    }
+    val rowBorder = if (checked) colors.informative_active else colors.cardBorder
+    Row(
+        modifier
+            .sizeIn(minHeight = dimens.rowMinHeight)
+            .semantics { stateDescription = description }
+            .toggleable(checked, interactionSource = interaction, indication = null, enabled = enabled, role = Role.Checkbox, onValueChange = { onToggle() })
+            .graphicsLayer {
+                val scale = if (pressed && enabled) PleosMotion.pressedScale else 1f
+                scaleX = scale; scaleY = scale
+            }
+            .clip(shapes.card)
+            .background(rowBackground)
+            .border(dimens.borderThin, rowBorder, shapes.card)
+            .padding(dimens.cardPaddingCompact)
+            .testTag("packing-check-${item.id}"),
+        horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         CheckGlyph(checked)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            DepartureText(itemTitle(item), style = LocalPleosTypography.current.bodyMediumStrong)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.microSpacing)) {
+            DepartureText(itemTitle(item), style = PleosTheme.typography.bodyMediumStrong)
             val quantity = plan.quantity(item.kind)
             if (quantity != null) DepartureText(stringResource(if (item.kind == SupplyKind.FEEDING) R.string.packing_feed_count else R.string.packing_diaper_count, quantity), secondary = true)
             else if (item.kind == SupplyKind.FEEDING || item.kind == SupplyKind.DIAPERS) DepartureText(stringResource(R.string.packing_count_unknown), secondary = true)
@@ -124,20 +147,24 @@ private fun PackingCheckRow(item: PackingItem, plan: PackingPlan, checked: Boole
 
 @Composable
 internal fun CheckGlyph(checked: Boolean) {
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
     val ink = MaterialTheme.colorScheme.onSurface
     val paper = MaterialTheme.colorScheme.surface
-    Canvas(Modifier.size(48.dp)) {
-        drawRoundRect(if (checked) ink else paper, cornerRadius = CornerRadius(8.dp.toPx()))
-        if (!checked) drawRoundRect(ink, cornerRadius = CornerRadius(8.dp.toPx()), style = Stroke(3.dp.toPx()))
+    Canvas(Modifier.size(dimens.iconSize)) {
+        val radius = shapes.checkboxRadius.toPx()
+        drawRoundRect(if (checked) ink else paper, cornerRadius = CornerRadius(radius))
+        if (!checked) drawRoundRect(ink, cornerRadius = CornerRadius(radius), style = Stroke(dimens.strokeCheck.toPx()))
         else {
-            drawLine(paper, Offset(size.width * .23f, size.height * .5f), Offset(size.width * .43f, size.height * .7f), 4.dp.toPx())
-            drawLine(paper, Offset(size.width * .43f, size.height * .7f), Offset(size.width * .78f, size.height * .28f), 4.dp.toPx())
+            drawLine(paper, Offset(size.width * .23f, size.height * .5f), Offset(size.width * .43f, size.height * .7f), dimens.strokeCheckMark.toPx())
+            drawLine(paper, Offset(size.width * .43f, size.height * .7f), Offset(size.width * .78f, size.height * .28f), dimens.strokeCheckMark.toPx())
         }
     }
 }
 
 @Composable
 internal fun PackingSettingsScreen(record: DepartureRecord, enabled: Boolean, onSave: (PackingSettings) -> Unit) {
+    val dimens = PleosTheme.dimens
     var scope by rememberSaveable(record.outingId) { mutableStateOf(record.settings.scope.name) }
     var manual by rememberSaveable(record.outingId) { mutableStateOf(record.settings.manualTravelMinutes) }
     var extra by rememberSaveable(record.outingId) { mutableIntStateOf(record.settings.extraOutingMinutes) }
@@ -147,7 +174,7 @@ internal fun PackingSettingsScreen(record: DepartureRecord, enabled: Boolean, on
     var spareDiaper by rememberSaveable(record.outingId) { mutableIntStateOf(record.settings.spareDiapers) }
     DepartureText(stringResource(R.string.packing_calculation_detail), secondary = true)
     CareCard(stringResource(R.string.packing_scope_title)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
             PackingScope.entries.forEach { value -> CareButton(stringResource(if (value == PackingScope.OUTBOUND) R.string.packing_scope_outbound else R.string.packing_scope_outing),
                 { scope = value.name }, Modifier.weight(1f), enabled = enabled, primary = false, selected = scope == value.name) }
         }
@@ -175,12 +202,13 @@ internal fun PackingSettingsScreen(record: DepartureRecord, enabled: Boolean, on
 
 @Composable
 internal fun MinuteChoices(value: Int?, enabled: Boolean, presets: List<Int?> = listOf(null, 90, 120, 150, 180, 240, 360), onChange: (Int?) -> Unit) {
+    val dimens = PleosTheme.dimens
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val options = if (value !in presets) presets + value else presets
-        val columns = if (maxWidth >= 540.dp) 3 else 2
-        Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        val columns = if (maxWidth >= dimens.breakpointMinuteGrid) 3 else 2
+        Column(verticalArrangement = Arrangement.spacedBy(dimens.itemSpacing)) {
             options.chunked(columns).forEach { values ->
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing)) {
                     values.forEach { minutes -> CareButton(if (minutes == null) stringResource(R.string.departure_unset)
                         else stringResource(R.string.departure_minutes, minutes), { onChange(minutes) }, Modifier.weight(1f), enabled = enabled,
                         primary = false, selected = minutes == value) }
@@ -193,10 +221,11 @@ internal fun MinuteChoices(value: Int?, enabled: Boolean, presets: List<Int?> = 
 
 @Composable
 private fun QuantityStepper(value: Int, range: IntRange, step: Int, format: Int, enabled: Boolean, onChange: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+    val dimens = PleosTheme.dimens
+    Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing), verticalAlignment = Alignment.CenterVertically) {
         CareButton(stringResource(R.string.departure_less, step), { onChange((value - step).coerceAtLeast(range.first)) },
             enabled = enabled && value > range.first, primary = false)
-        DepartureText(stringResource(format, value), Modifier.weight(1f), LocalPleosTypography.current.titleSmall)
+        DepartureText(stringResource(format, value), Modifier.weight(1f), PleosTheme.typography.titleSmall)
         CareButton(stringResource(R.string.departure_more, step), { onChange((value + step).coerceAtMost(range.last)) },
             enabled = enabled && value < range.last, primary = false)
     }
@@ -204,15 +233,18 @@ private fun QuantityStepper(value: Int, range: IntRange, step: Int, format: Int,
 
 @Composable
 internal fun AddPackingItem(enabled: Boolean, onAdd: (String) -> Unit) {
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
+    val type = PleosTheme.typography
     var value by rememberSaveable { mutableStateOf("") }
     val label = stringResource(R.string.packing_name_label)
     DepartureText(stringResource(R.string.packing_add_detail), secondary = true)
-    DepartureText(label, style = LocalPleosTypography.current.bodyLargeStrong)
+    DepartureText(label, style = type.bodyLargeStrong)
     BasicTextField(value, { text -> if (text.length <= 30 && text.none { it.isISOControl() }) value = text },
-        Modifier.fillMaxWidth().sizeIn(minHeight = 96.dp).clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface)
-            .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp)).padding(24.dp)
+        Modifier.fillMaxWidth().sizeIn(minHeight = dimens.heroButtonHeight).clip(shapes.container).background(MaterialTheme.colorScheme.surface)
+            .border(dimens.borderMedium, MaterialTheme.colorScheme.outline, shapes.container).padding(dimens.cardPadding)
             .semantics { contentDescription = label }.testTag("packing-name"),
-        enabled = enabled, singleLine = true, textStyle = LocalPleosTypography.current.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+        enabled = enabled, singleLine = true, textStyle = type.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { if (value.isNotBlank() && enabled) onAdd(value) }),
         decorationBox = { inner -> Box { if (value.isEmpty()) DepartureText(stringResource(R.string.packing_name_hint), secondary = true); inner() } })

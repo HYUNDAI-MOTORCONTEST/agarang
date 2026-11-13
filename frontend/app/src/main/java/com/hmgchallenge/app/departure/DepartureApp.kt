@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,14 +31,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
 import com.hmgchallenge.app.care.CareScreen
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.care.CareNotice
 import com.hmgchallenge.shared.care.CareStoreStatus
 import com.hmgchallenge.shared.departure.DepartureChoice
@@ -61,10 +61,12 @@ fun DepartureApp(
     onCancelStop: () -> Unit,
     connections: @Composable () -> Unit,
 ) {
+    val dimens = PleosTheme.dimens
     val ux = LocalUxRestrictions.current
     val restricted = ux.requiresDistractionOptimization || ux.noSetup || ux.noKeyboard
     var pageName by rememberSaveable { mutableStateOf(DeparturePage.HOME.name) }
     val page = if (restricted) DeparturePage.HOME else DeparturePage.valueOf(pageName)
+    var careSubRouteBack by remember { mutableStateOf<(() -> Unit)?>(null) }
     var waitingPreparation by rememberSaveable { mutableStateOf<Long?>(null) }
     var waitingCare by rememberSaveable { mutableStateOf<Long?>(null) }
     var afterSave by rememberSaveable { mutableStateOf(DeparturePage.HOME.name) }
@@ -82,15 +84,18 @@ fun DepartureApp(
     }
     LaunchedEffect(restricted) {
         if (restricted) {
-            pageName = DeparturePage.HOME.name; waitingPreparation = null; waitingCare = null
+            pageName = DeparturePage.HOME.name; waitingPreparation = null; waitingCare = null; careSubRouteBack = null
             focus.clearFocus(force = true); keyboard?.hide()
         }
     }
     LaunchedEffect(responding) {
         if (responding) {
-            pageName = DeparturePage.HOME.name; waitingPreparation = null; waitingCare = null
+            pageName = DeparturePage.HOME.name; waitingPreparation = null; waitingCare = null; careSubRouteBack = null
             focus.clearFocus(force = true); keyboard?.hide()
         }
+    }
+    LaunchedEffect(page) {
+        if (page != DeparturePage.RECORDS) careSubRouteBack = null
     }
     DisposableEffect(activity) {
         val original = activity?.window?.attributes?.softInputMode
@@ -115,16 +120,47 @@ fun DepartureApp(
         }
     }
     BackHandler(enabled = responding || (!restricted && page != DeparturePage.HOME)) { if (responding) closeResponse() else back() }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        DepartureHeader(state, page, restricted, responding, { if (responding) closeResponse() else back() }, { open(DeparturePage.TOOLS) })
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(dimens.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(dimens.shellGap),
+    ) {
+        DepartureHeader(
+            state = state,
+            page = page,
+            restricted = restricted,
+            responding = responding,
+            onBack = {
+                val subBack = careSubRouteBack
+                when {
+                    responding -> closeResponse()
+                    page == DeparturePage.RECORDS && subBack != null -> subBack()
+                    else -> back()
+                }
+            },
+            onTools = { open(DeparturePage.TOOLS) },
+        )
         if (responding) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(8.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(dimens.contentInset),
+                verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
+            ) {
                 CryResponseScreen(state, actions, restricted, shownStopRequest, onNavigateStop,
                     { actions.responseNavigationCandidate()?.let(onNavigateStop) }, onConfirmStop, ::cancelNavigation,
                     { actions.finishResponse(); open(DeparturePage.RECORDS) })
             }
         } else if (restricted) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
+            ) {
                 CryResponseEntry(state, actions)
                 ResponseNavigationStatus(shownStopRequest, true, onConfirmStop, ::cancelNavigation)
                 DrivingDeparture(state, actions)
@@ -133,15 +169,29 @@ fun DepartureApp(
             val scroller = key(page) { rememberScrollState() }
             Box(Modifier.weight(1f).then(if (page == DeparturePage.ADD_ITEM) Modifier.imePadding() else Modifier)) {
                 when (page) {
-                    DeparturePage.RECORDS -> CareScreen(state.care, actions::recordCare, actions::undoCare, onReloadCare,
-                        actions::saveProfile, actions::editCare) {
-                        if (state.isDemo) Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    DeparturePage.RECORDS -> CareScreen(
+                        state = state.care,
+                        onRecord = actions::recordCare,
+                        onUndo = actions::undoCare,
+                        onReload = onReloadCare,
+                        onSaveProfile = actions::saveProfile,
+                        onEditEvent = actions::editCare,
+                        embeddedInShell = true,
+                        onSubRouteChange = { _, onSubBack -> careSubRouteBack = onSubBack },
+                    ) {
+                        if (state.isDemo) Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                             DepartureText(stringResource(R.string.departure_demo_detail))
                             CareButton(stringResource(R.string.departure_real_connections), { actions.endDemo(); open(DeparturePage.CONNECTIONS) })
                         } else connections()
                     }
                     DeparturePage.CONNECTIONS -> connections()
-                    else -> Column(Modifier.fillMaxSize().verticalScroll(scroller).padding(8.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    else -> Column(
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scroller)
+                            .padding(dimens.contentInset),
+                        verticalArrangement = Arrangement.spacedBy(dimens.itemSpacing),
+                    ) {
                         DepartureMessage(state) { actions.load(); onReloadCare() }
                         ResponseNavigationStatus(shownStopRequest, false, onConfirmStop, ::cancelNavigation)
                         if (page == DeparturePage.HOME) CryResponseEntry(state, actions)
@@ -179,7 +229,7 @@ fun DepartureApp(
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing)) {
                 listOf(DeparturePage.HOME to R.string.departure_nav_home, DeparturePage.CHECKLIST to R.string.departure_nav_packing,
                     DeparturePage.RECORDS to R.string.departure_nav_records).forEach { (destination, label) ->
                     CareButton(stringResource(label), { open(destination) }, Modifier.weight(1f), primary = false,
@@ -192,11 +242,12 @@ fun DepartureApp(
 
 @Composable
 private fun DepartureHeader(state: DepartureUiState, page: DeparturePage, restricted: Boolean, responding: Boolean, onBack: () -> Unit, onTools: () -> Unit) {
-    val type = LocalPleosTypography.current
+    val dimens = PleosTheme.dimens
+    val type = PleosTheme.typography
     val profile = state.care.record?.profile
     val ux = LocalUxRestrictions.current
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (!restricted && (responding || page != DeparturePage.HOME)) CareButton(stringResource(R.string.care_back), onBack, Modifier.width(96.dp), primary = false)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing), verticalAlignment = Alignment.CenterVertically) {
+        if (!restricted && (responding || page != DeparturePage.HOME)) CareButton(stringResource(R.string.care_back), onBack, Modifier.width(dimens.headerBackWidth), primary = false)
         Column(Modifier.weight(1f)) {
             DepartureText(stringResource(if (responding) R.string.response_title else when (page) {
                 DeparturePage.HOME -> R.string.app_name
@@ -209,6 +260,7 @@ private fun DepartureHeader(state: DepartureUiState, page: DeparturePage, restri
                 DeparturePage.CARE_FIRST -> R.string.departure_after_care
                 DeparturePage.STOPS -> R.string.departure_stop_plan
                 DeparturePage.CONNECTIONS -> R.string.departure_connections
+                DeparturePage.NEW_OUTING -> R.string.departure_new_outing
                 else -> R.string.departure_tools
             }), style = type.titleLarge, maxLines = 1)
             val context = when {
@@ -221,7 +273,7 @@ private fun DepartureHeader(state: DepartureUiState, page: DeparturePage, restri
             }
             DepartureText(context, secondary = true, maxLines = 1)
         }
-        if (!restricted && !responding) CareButton(stringResource(R.string.departure_tools), onTools, primary = false, tag = "departure-tools")
+        if (!restricted && !responding && page != DeparturePage.TOOLS) CareButton(stringResource(R.string.departure_tools), onTools, primary = false, tag = "departure-tools")
     }
 }
 
@@ -245,13 +297,14 @@ private fun DepartureMessage(state: DepartureUiState, onReload: () -> Unit) {
 
 @Composable
 private fun DrivingDeparture(state: DepartureUiState, actions: DepartureController) {
+    val type = PleosTheme.typography
     val forecast = state.evaluation?.forecast
     val ux = LocalUxRestrictions.current
     CareCard(stringResource(R.string.departure_driving_title)) {
         DepartureText(stringResource(if (forecast?.journey?.careBeforeArrival?.isNotEmpty() == true) R.string.departure_driving_stop else R.string.departure_driving_check),
-            style = LocalPleosTypography.current.titleLarge)
+            style = type.titleLarge)
         DepartureText(stringResource(R.string.departure_arrival) + " · " + timeText(forecast?.journey?.estimatedArrivalAtEpochMillis),
-            style = LocalPleosTypography.current.titleSmall)
+            style = type.titleSmall)
         val feed = forecast?.needs?.firstOrNull { it.need == CareNeed.FEED }
         DepartureText(stringResource(R.string.departure_next_feed) + " · " + estimateText(feed?.estimate))
         DepartureText(stringResource(if (ux.source == UxRestrictionsState.Source.CAR_SERVICE) R.string.departure_driving_setup

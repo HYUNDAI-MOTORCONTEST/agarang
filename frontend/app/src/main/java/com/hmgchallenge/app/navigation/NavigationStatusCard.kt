@@ -9,7 +9,7 @@ import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
 import com.hmgchallenge.app.care.CareText
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.data.DataOrigin
 import com.hmgchallenge.shared.data.DataSnapshot
 import com.hmgchallenge.shared.data.DataStatus
@@ -46,7 +46,7 @@ fun NavigationStatusCard(
                 val time = DateTimeFormatter.ofPattern(pattern).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(arrival))
                 stringResource(R.string.navi_arrival, time)
             }
-            CareText(text, style = LocalPleosTypography.current.titleLarge, maxLines = 2)
+            CareText(text, style = PleosTheme.typography.titleLarge, maxLines = 2)
         } else CareText(stringResource(when (journey.status) {
             DataStatus.LOADING -> R.string.navi_loading
             DataStatus.EMPTY -> R.string.navi_no_route

@@ -1,17 +1,21 @@
 package com.hmgchallenge.app.care
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -27,13 +32,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.driving.LocalUxRestrictions
-import com.hmgchallenge.app.ui.theme.LocalPleosColors
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosMotion
+import com.hmgchallenge.app.ui.theme.PleosRoles.cardBorder
+import com.hmgchallenge.app.ui.theme.PleosRoles.cardContainer
+import com.hmgchallenge.app.ui.theme.PleosRoles.resolveButtonStyle
+import com.hmgchallenge.app.ui.theme.PleosTheme
 
 @Composable
-internal fun CareText(text: String, modifier: Modifier = Modifier, style: TextStyle = LocalPleosTypography.current.labelMedium, maxLines: Int = 3) {
+internal fun CareText(text: String, modifier: Modifier = Modifier, style: TextStyle = PleosTheme.typography.labelMedium, maxLines: Int = 3) {
     Text(
         text = LocalUxRestrictions.current.limit(text),
         modifier = modifier,
@@ -45,13 +52,43 @@ internal fun CareText(text: String, modifier: Modifier = Modifier, style: TextSt
 }
 
 @Composable
-internal fun CareCard(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun CareCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    accentColor: Color? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = PleosTheme.colors
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
+    val type = PleosTheme.typography
     Column(
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shapes.card)
+            .background(colors.cardContainer)
+            .border(dimens.borderThin, colors.cardBorder, shapes.card)
+            .padding(if (compact) dimens.cardPaddingCompact else dimens.cardPadding),
+        verticalArrangement = Arrangement.spacedBy(if (compact) dimens.itemSpacing else dimens.cardContentSpacing),
     ) {
-        CareText(title, style = LocalPleosTypography.current.titleSmall)
+        if (accentColor != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(dimens.tightSpacing),
+            ) {
+                Box(
+                    Modifier
+                        .width(dimens.accentBarWidth)
+                        .height(dimens.accentBarHeight)
+                        .clip(shapes.pillBar)
+                        .background(accentColor),
+                )
+                CareText(title, style = type.titleSmall)
+            }
+        } else {
+            CareText(title, style = type.titleSmall)
+        }
         content()
     }
 }
@@ -72,42 +109,80 @@ internal fun CareButton(
     compact: Boolean = false,
     description: String? = null,
 ) {
-    val colors = LocalPleosColors.current
+    val colors = PleosTheme.colors
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val filled = primary || selected == true
-    val container = when {
-        !enabled -> colors.button_filled_disabled
-        pressed && filled -> colors.button_filled_pressed
-        filled -> colors.button_filled_enabled
-        pressed -> colors.surface_accent
-        else -> colors.surface_high
-    }
+    val style = colors.resolveButtonStyle(
+        enabled = enabled,
+        primary = primary,
+        selected = selected,
+        pressed = pressed,
+    )
     val input = if (selected != null) {
         Modifier.selectable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = Role.RadioButton, onClick = onClick)
     } else {
         Modifier.clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
     }
-    androidx.compose.foundation.layout.Box(
-        modifier = modifier.sizeIn(minWidth = 64.dp, minHeight = 72.dp)
+    val borderModifier = style.border?.let { borderColor ->
+        Modifier.border(
+            width = if (selected == true) dimens.borderMedium else dimens.borderThin,
+            color = borderColor,
+            shape = shapes.control,
+        )
+    } ?: Modifier
+    Box(
+        modifier = modifier
+            .defaultMinSize(
+                minWidth = dimens.touchMinSize,
+                minHeight = if (compact) dimens.touchMinSize else dimens.buttonHeight,
+            )
             .then(if (tag == null) Modifier else Modifier.testTag(tag))
             .then(input)
             .then(if (description == null) Modifier else Modifier.semantics { contentDescription = description })
             .graphicsLayer {
-                val scale = if (pressed && enabled) 0.95f else 1f
+                val scale = if (pressed && enabled) PleosMotion.pressedScale else 1f
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(16.dp)).background(container)
-            .padding(horizontal = if (compact) 8.dp else 16.dp, vertical = if (compact) 0.dp else 16.dp),
+            .clip(shapes.control)
+            .background(style.container)
+            .then(borderModifier)
+            .padding(
+                horizontal = if (compact) dimens.buttonHorizontalPaddingCompact else dimens.buttonHorizontalPadding,
+                vertical = if (compact) dimens.nanoSpacing else dimens.buttonVerticalPaddingCompact,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = LocalUxRestrictions.current.limit(label),
-            style = LocalPleosTypography.current.labelMedium,
-            color = when { !enabled -> colors.text_dark_tertiary; filled -> colors.basic_00; else -> colors.text_dark_primary },
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (style.indicator != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(dimens.microSpacing),
+            ) {
+                Box(
+                    Modifier
+                        .width(dimens.tabIndicatorWidth)
+                        .height(dimens.tabIndicatorHeight)
+                        .clip(shapes.pillBar)
+                        .background(style.indicator),
+                )
+                Text(
+                    text = LocalUxRestrictions.current.limit(label),
+                    style = PleosTheme.typography.labelMedium,
+                    color = style.content,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            Text(
+                text = LocalUxRestrictions.current.limit(label),
+                style = PleosTheme.typography.labelMedium,
+                color = style.content,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

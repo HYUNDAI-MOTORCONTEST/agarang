@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -38,14 +37,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModelProvider
 import com.hmgchallenge.app.departure.DepartureApp
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
-import com.hmgchallenge.app.ui.theme.LocalPleosColors
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.app.ui.theme.VehicleTheme
 import com.hmgchallenge.shared.HealthResponse
 import com.hmgchallenge.app.navigation.NavigationStatusCard
@@ -142,14 +139,15 @@ fun MainScreen(
     onDismissFacilityAlert: () -> Unit,
     onSelectFacility: (StopCandidate) -> Unit,
 ) {
-    val type = LocalPleosTypography.current
+    val type = PleosTheme.typography
+    val dimens = PleosTheme.dimens
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+                .padding(horizontal = dimens.screenPadding, vertical = dimens.mainScreenVerticalPadding),
+            verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
         ) {
             Text(
                 text = stringResource(R.string.app_name),
@@ -189,7 +187,9 @@ fun MainScreen(
 @Composable
 private fun DrivingStatusBanner() {
     val ux = LocalUxRestrictions.current
-    val type = LocalPleosTypography.current
+    val type = PleosTheme.typography
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
     val scheme = MaterialTheme.colorScheme
     val restricted = ux.requiresDistractionOptimization
     val (title, detail) = when (ux.source) {
@@ -206,9 +206,9 @@ private fun DrivingStatusBanner() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(shapes.container)
             .background(container)
-            .padding(horizontal = 28.dp, vertical = 20.dp),
+            .padding(horizontal = dimens.bannerHorizontalPadding, vertical = dimens.bannerVerticalPadding),
     ) {
         Text(text = title, style = type.bodyLargeStrong, color = titleColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(text = detail, style = type.labelMedium, color = detailColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -240,28 +240,31 @@ private fun <T> InfoCard(
 ) {
     val ux = LocalUxRestrictions.current
     val restricted = ux.requiresDistractionOptimization
-    val type = LocalPleosTypography.current
+    val type = PleosTheme.typography
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
+    val colors = PleosTheme.colors
     val scheme = MaterialTheme.colorScheme
     val isError = state is LoadState.Error
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .clip(RoundedCornerShape(24.dp))
+            .clip(shapes.card)
             .background(scheme.surfaceVariant),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 오류 표시 막대: 글자("오류: …")가 같은 뜻을 전하는 보조 표시라 Informative 색을 쓴다(PleosRoles 주석).
         Box(
             Modifier
-                .width(8.dp)
+                .width(dimens.errorBarWidth)
                 .fillMaxHeight()
-                .background(if (isError) LocalPleosColors.current.informative_negative else scheme.surfaceVariant),
+                .background(if (isError) colors.informative_negative else scheme.surfaceVariant),
         )
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 20.dp, top = 28.dp, bottom = 28.dp),
+                .padding(start = dimens.cardPaddingCompact, top = dimens.infoCardVerticalPadding, bottom = dimens.infoCardVerticalPadding),
         ) {
             Text(text = title, style = type.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (!restricted) {
@@ -272,8 +275,8 @@ private fun <T> InfoCard(
                 LoadState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
                     if (!restricted) {
                         // 주행 규제 중에는 회전 애니메이션을 그리지 않는다(정적 텍스트만).
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp), color = scheme.onSurface, strokeWidth = 4.dp)
-                        Box(Modifier.width(16.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(dimens.progressSize), color = scheme.onSurface, strokeWidth = dimens.strokeCheckMark)
+                        Box(Modifier.width(dimens.itemSpacing))
                     }
                     Text(text = stringResource(R.string.loading), style = type.bodyLarge, color = scheme.onSurface, maxLines = 1)
                 }
@@ -293,12 +296,12 @@ private fun <T> InfoCard(
                 )
             }
         }
-        Box(Modifier.width(24.dp))
+        Box(Modifier.width(dimens.sectionSpacing))
         PleosFilledButton(
             label = actionLabel,
             onClick = onAction,
             enabled = state !is LoadState.Loading, // BUTTON 문서: Loading 상태는 조작 불가
-            modifier = Modifier.padding(end = 28.dp),
+            modifier = Modifier.padding(end = dimens.bannerHorizontalPadding),
         )
     }
 }
@@ -312,7 +315,9 @@ private fun <T> InfoCard(
  */
 @Composable
 private fun PleosFilledButton(label: String, onClick: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
-    val colors = LocalPleosColors.current
+    val colors = PleosTheme.colors
+    val dimens = PleosTheme.dimens
+    val shapes = PleosTheme.shapes
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val container = when {
@@ -322,16 +327,16 @@ private fun PleosFilledButton(label: String, onClick: () -> Unit, enabled: Boole
     }
     Box(
         modifier = modifier
-            .sizeIn(minWidth = 64.dp, minHeight = 72.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .sizeIn(minWidth = dimens.touchMinSize, minHeight = dimens.buttonHeight)
+            .clip(shapes.control)
             .background(container)
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 28.dp),
+            .padding(horizontal = dimens.bannerHorizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            style = LocalPleosTypography.current.labelMedium,
+            style = PleosTheme.typography.labelMedium,
             color = if (enabled) colors.basic_00 else colors.text_dark_tertiary,
             maxLines = 1,
         )

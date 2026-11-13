@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -29,11 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.care.BabyProfile
 import com.hmgchallenge.shared.care.CareEvent
 import com.hmgchallenge.shared.care.CareEventType
@@ -67,8 +67,12 @@ fun CareScreen(
     onReload: () -> Unit,
     onSaveProfile: (Int, Int?) -> Unit,
     onEditEvent: (String, Long, Int?) -> Unit,
+    embeddedInShell: Boolean = false,
+    onSubRouteChange: ((Boolean, (() -> Unit)?) -> Unit)? = null,
     connections: @Composable () -> Unit,
 ) {
+    val dimens = PleosTheme.dimens
+    val type = PleosTheme.typography
     val ux = LocalUxRestrictions.current
     val restricted = ux.requiresDistractionOptimization || ux.noSetup
     var route by rememberSaveable { mutableStateOf(HOME) }
@@ -83,6 +87,12 @@ fun CareScreen(
     val visibleRoute = if (restricted) HOME else route
 
     LaunchedEffect(restricted) { if (restricted) goHome() }
+    LaunchedEffect(visibleRoute) {
+        onSubRouteChange?.invoke(visibleRoute != HOME, if (visibleRoute != HOME) goBack else null)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onSubRouteChange?.invoke(false, null) }
+    }
     LaunchedEffect(state.revision, state.notice, state.problem) {
         val waiting = awaitingRevision
         if (waiting != null && state.revision > waiting &&
@@ -94,10 +104,13 @@ fun CareScreen(
 
     if (visibleRoute == CONNECTIONS) {
         Column(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(if (embeddedInShell) dimens.contentInset else dimens.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(if (embeddedInShell) dimens.itemSpacing else dimens.sectionSpacing),
         ) {
-            CareButton(stringResource(R.string.care_back), goBack, primary = false)
+            if (!embeddedInShell) CareButton(stringResource(R.string.care_back), goBack, primary = false)
             Box(Modifier.weight(1f)) { connections() }
         }
         return
@@ -106,25 +119,35 @@ fun CareScreen(
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             // Observed Pleos AVD window: 616x324dp in landscape. Keep two 260dp control columns at 600dp+.
-            val wide = maxWidth >= 600.dp
+            val wide = maxWidth >= dimens.breakpointCareWide
             val scrollState = key(visibleRoute) { rememberScrollState() }
             Column(
-                Modifier.fillMaxSize().verticalScroll(scrollState).padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(if (embeddedInShell) dimens.contentInset else dimens.screenPadding),
+                verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
             ) {
                 val homeRecord = state.record.takeIf { visibleRoute == HOME }
                 if (homeRecord != null) {
                     CareHomeHeader(homeRecord, state, onUndo)
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        if (visibleRoute != HOME) CareButton(stringResource(R.string.care_back), goBack, Modifier.width(96.dp), primary = false)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (!embeddedInShell && visibleRoute != HOME) {
+                            CareButton(stringResource(R.string.care_back), goBack, Modifier.width(dimens.headerBackWidth), primary = false)
+                        }
                         CareText(
                             stringResource(when (visibleRoute) {
                                 PROFILE -> R.string.care_profile_title
                                 HISTORY -> R.string.care_history_title
                                 EDIT -> R.string.care_edit_title
                                 else -> R.string.care_title
-                            }), Modifier.weight(1f), LocalPleosTypography.current.titleSmall,
+                            }),
+                            Modifier.weight(1f),
+                            type.titleSmall,
                         )
                     }
                 }
@@ -148,13 +171,13 @@ fun CareScreen(
                     else -> {
                         val record = state.record
                         if (record == null && state.status == CareStoreStatus.READY) {
-                            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                                 CareText(stringResource(if (restricted) R.string.care_park_to_setup else R.string.care_first_detail))
                                 CareButton(stringResource(R.string.care_setup), { route = PROFILE }, Modifier.fillMaxWidth(), enabled = state.canWrite && !restricted, tag = "care_setup")
                             }
                         } else if (record != null) {
                             if (wide) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                                     QuickRecords(record, state.canWrite, onRecord, Modifier.weight(1f))
                                     LatestRecord(record, Modifier.weight(1f))
                                 }
@@ -164,7 +187,7 @@ fun CareScreen(
                             }
                             if (state.problem != null || state.status != CareStoreStatus.READY) CareMessage(state, onReload)
                             if (!restricted) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                                     CareButton(stringResource(R.string.care_history_open), { route = HISTORY }, Modifier.weight(1f), primary = false, tag = "care_history")
                                     CareButton(stringResource(R.string.care_profile_title), { route = PROFILE }, Modifier.weight(1f), enabled = state.canWrite, primary = false, tag = "care_profile")
                                 }
@@ -198,9 +221,10 @@ private fun CareHomeHeader(record: CareRecord, state: CareState, onUndo: () -> U
             null -> if (CareJournal.isSleeping(record)) R.string.care_sleeping else R.string.care_ready_short
         }
     }
+    val dimens = PleosTheme.dimens
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 72.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+        Modifier.fillMaxWidth().heightIn(min = dimens.buttonHeight),
+        horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -208,7 +232,7 @@ private fun CareHomeHeader(record: CareRecord, state: CareState, onUndo: () -> U
             CareText(stringResource(status), maxLines = 1)
         }
         CareButton(
-            stringResource(R.string.care_undo_short), onUndo, Modifier.width(80.dp),
+            stringResource(R.string.care_undo_short), onUndo, Modifier.width(dimens.compactActionWidth),
             enabled = state.canWrite && record.events.isNotEmpty(), primary = false,
             tag = "care_undo", description = stringResource(R.string.care_undo),
         )
@@ -239,14 +263,15 @@ private fun CareMessage(state: CareState, onReload: () -> Unit) {
 
 @Composable
 private fun QuickRecords(record: CareRecord, enabled: Boolean, onRecord: (CareEventType) -> Unit, modifier: Modifier = Modifier) {
+    val dimens = PleosTheme.dimens
     val sleeping = CareJournal.isSleeping(record)
     val amount = record.profile.preferences.preferredFeedAmountMl
     BoxWithConstraints(modifier.fillMaxWidth()) {
         // Two 72dp rows fit the 324dp-high Pleos window with 24dp edge/target spacing.
-        val columns = if (maxWidth >= 244.dp) 2 else 1
-        Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        val columns = if (maxWidth >= dimens.breakpointQuickRecordTwoCol) 2 else 1
+        Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
             CareEventType.entries.chunked(columns).forEach { types ->
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                     types.forEach { type ->
                         val label = if (type == CareEventType.FEED && amount != null) stringResource(R.string.care_feed_button, amount) else eventName(type)
                         val allowed = enabled && when (type) {
@@ -264,13 +289,13 @@ private fun QuickRecords(record: CareRecord, enabled: Boolean, onRecord: (CareEv
 
 @Composable
 private fun LatestRecord(record: CareRecord, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        CareText(stringResource(R.string.care_latest_title))
+    val type = PleosTheme.typography
+    CareCard(stringResource(R.string.care_latest_title), modifier, compact = true) {
         val event = record.events.firstOrNull()
         if (event == null) {
             CareText(stringResource(R.string.care_empty_records))
         } else {
-            CareText(eventSummary(event), style = LocalPleosTypography.current.titleSmall)
+            CareText(eventSummary(event), style = type.titleSmall)
             CareText(eventTime(event.occurredAtEpochMillis))
         }
     }
@@ -278,11 +303,13 @@ private fun LatestRecord(record: CareRecord, modifier: Modifier = Modifier) {
 
 @Composable
 private fun ProfileForm(profile: BabyProfile?, enabled: Boolean, onSave: (Int, Int?) -> Unit) {
+    val dimens = PleosTheme.dimens
+    val type = PleosTheme.typography
     var month by rememberSaveable(profile?.id) { mutableIntStateOf(profile?.monthAge ?: 0) }
     var amount by rememberSaveable(profile?.id) { mutableStateOf(profile?.preferences?.preferredFeedAmountMl) }
     CareCard(stringResource(R.string.care_month_title)) {
-        CareText(stringResource(R.string.care_month_age, month), style = LocalPleosTypography.current.titleLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        CareText(stringResource(R.string.care_month_age, month), style = type.titleLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
             CareButton(stringResource(R.string.care_month_less), { month-- }, Modifier.weight(1f), enabled = enabled && month > 0, primary = false)
             CareButton(stringResource(R.string.care_month_more), { month++ }, Modifier.weight(1f), enabled = enabled && month < 24, primary = false)
         }
@@ -296,12 +323,13 @@ private fun ProfileForm(profile: BabyProfile?, enabled: Boolean, onSave: (Int, I
 
 @Composable
 private fun AmountChoices(selected: Int?, enabled: Boolean, onSelect: (Int?) -> Unit) {
+    val dimens = PleosTheme.dimens
     BoxWithConstraints(Modifier.fillMaxWidth().selectableGroup()) {
-        val columns = if (maxWidth >= 700.dp) 3 else if (maxWidth >= 360.dp) 2 else 1
+        val columns = if (maxWidth >= dimens.breakpointThreeGrid) 3 else if (maxWidth >= dimens.breakpointTwoGrid) 2 else 1
         val values = if (selected != null && selected !in AMOUNTS) AMOUNTS + selected else AMOUNTS
-        Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
             values.chunked(columns).forEach { options ->
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                     options.forEach { value ->
                         val label = if (value == null) stringResource(R.string.care_amount_none) else stringResource(R.string.care_amount_ml, value)
                         CareButton(label, { onSelect(value) }, Modifier.weight(1f), enabled = enabled, primary = false, selected = selected == value)
@@ -328,11 +356,13 @@ private fun CareHistory(record: CareRecord, enabled: Boolean, onEdit: (String) -
 
 @Composable
 private fun EventForm(event: CareEvent, enabled: Boolean, onSave: (Long, Int?) -> Unit) {
+    val dimens = PleosTheme.dimens
+    val type = PleosTheme.typography
     var at by rememberSaveable(event.id) { mutableStateOf(event.occurredAtEpochMillis) }
     var amount by rememberSaveable(event.id) { mutableStateOf(event.feedAmountMl) }
     CareCard(eventName(event.type)) {
-        CareText(eventTime(at), style = LocalPleosTypography.current.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        CareText(eventTime(at), style = type.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
             CareButton(stringResource(R.string.care_time_earlier), { at -= FIVE_MINUTES }, Modifier.weight(1f), enabled = enabled && at >= FIVE_MINUTES, primary = false)
             CareButton(stringResource(R.string.care_time_later), { at += FIVE_MINUTES }, Modifier.weight(1f), enabled = enabled && at <= System.currentTimeMillis() - FIVE_MINUTES, primary = false)
         }

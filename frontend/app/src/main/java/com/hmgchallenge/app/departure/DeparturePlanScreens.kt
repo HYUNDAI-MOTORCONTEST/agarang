@@ -11,11 +11,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.care.CareRecord
 import com.hmgchallenge.shared.departure.DepartureChoice
 import com.hmgchallenge.shared.departure.DepartureDemoSituation
@@ -28,7 +27,7 @@ import com.hmgchallenge.shared.forecast.CareNeed
 internal fun DepartureReview(state: DepartureUiState, onConfirm: (Boolean) -> Unit) {
     var seated by rememberSaveable { mutableStateOf(false) }
     CareCard(stringResource(R.string.departure_review_title)) {
-        DepartureText(stringResource(R.string.departure_review_detail), style = LocalPleosTypography.current.bodyLargeStrong)
+        DepartureText(stringResource(R.string.departure_review_detail), style = PleosTheme.typography.bodyLargeStrong)
         state.evaluation?.packing?.let { PackingBasis(it) }
         val careBefore = state.evaluation?.forecast?.journey?.careBeforeArrival?.isNotEmpty() == true
         DepartureText(stringResource(if (careBefore) R.string.departure_review_stop_needed else R.string.departure_review_uncertain), secondary = true)
@@ -44,11 +43,12 @@ internal fun DepartureReview(state: DepartureUiState, onConfirm: (Boolean) -> Un
 
 @Composable
 internal fun CareFirstPlan(state: DepartureUiState, actions: DepartureController, onConfirm: () -> Unit) {
+    val type = PleosTheme.typography
     CareCard(stringResource(R.string.departure_care_first_title)) {
-        DepartureText(stringResource(R.string.departure_care_first_detail), style = LocalPleosTypography.current.bodyLargeStrong)
+        DepartureText(stringResource(R.string.departure_care_first_detail), style = type.bodyLargeStrong)
         DepartureText(stringResource(R.string.departure_care_first_eta), secondary = true)
         val feed = state.evaluation?.forecast?.needs?.firstOrNull { it.need == CareNeed.FEED }
-        DepartureText(stringResource(R.string.departure_next_feed) + " · " + estimateText(feed?.estimate), style = LocalPleosTypography.current.titleSmall)
+        DepartureText(stringResource(R.string.departure_next_feed) + " · " + estimateText(feed?.estimate), style = type.titleSmall)
         DepartureText(basisText(feed?.basis), secondary = true)
     }
     QuickCareRow(state, actions::recordCare, actions::undoCare)
@@ -88,7 +88,7 @@ internal fun DepartureStopPlans(state: DepartureUiState, onCandidate: (StopCandi
         CareCard(stringResource(title)) {
             val candidate = plan?.candidates?.firstOrNull()
             if (candidate == null) DepartureText(stringResource(R.string.facility_no_candidate)) else {
-                DepartureText(candidate.facility.name, style = LocalPleosTypography.current.titleSmall)
+                DepartureText(candidate.facility.name, style = PleosTheme.typography.titleSmall)
                 val seconds = candidate.travelDurationSeconds!!
                 DepartureText(stringResource(R.string.departure_stop_minutes, seconds / 60 + if (seconds % 60 > 0) 1 else 0))
                 DepartureText(stringResource(R.string.facility_diaper_unknown), secondary = true)
@@ -105,6 +105,7 @@ internal fun DepartureStopPlans(state: DepartureUiState, onCandidate: (StopCandi
 
 @Composable
 internal fun DepartureTools(state: DepartureUiState, actions: DepartureController, onTiming: () -> Unit, onConnections: () -> Unit, onNewOuting: () -> Unit, onHome: () -> Unit) {
+    val dimens = PleosTheme.dimens
     CareCard(stringResource(R.string.departure_tools_personal)) {
         CareButton(stringResource(R.string.departure_timing_action), onTiming, Modifier.fillMaxWidth(), primary = false)
         CareButton(stringResource(R.string.departure_new_outing), onNewOuting, Modifier.fillMaxWidth(), primary = false)
@@ -115,7 +116,7 @@ internal fun DepartureTools(state: DepartureUiState, actions: DepartureControlle
     }
     CareCard(stringResource(R.string.departure_demo_title)) {
         DepartureText(stringResource(R.string.departure_demo_detail), secondary = true)
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(dimens.itemSpacing)) {
             CareButton(stringResource(R.string.departure_demo_records), { actions.startDemo(false); onHome() }, Modifier.weight(1f), primary = false, tag = "departure-demo-records")
             CareButton(stringResource(R.string.departure_demo_first_day), { actions.startDemo(true); onHome() }, Modifier.weight(1f), primary = false, tag = "departure-demo-first-day")
         }

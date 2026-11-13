@@ -9,11 +9,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosAccentTone
+import com.hmgchallenge.app.ui.theme.PleosRoles.accentColor
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.care.CareEventType
 import com.hmgchallenge.shared.care.CareJournal
 import com.hmgchallenge.shared.facility.StopPlanType
@@ -29,10 +30,12 @@ import com.hmgchallenge.shared.response.ResponsePhase
 
 @Composable
 internal fun CryResponseEntry(state: DepartureUiState, actions: DepartureController) {
+    val dimens = PleosTheme.dimens
+    val colors = PleosTheme.colors
     if (state.response.phase == ResponsePhase.SUGGESTED) {
-        CareCard(stringResource(R.string.response_offer_title)) {
+        CareCard(stringResource(R.string.response_offer_title), accentColor = colors.accentColor(PleosAccentTone.WARNING)) {
             DepartureText(stringResource(R.string.response_offer_detail))
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                 CareButton(stringResource(R.string.response_offer_confirm), { state.response.episodeId?.let(actions::confirmResponse) }, Modifier.weight(1f), tag = "response-confirm-offer")
                 CareButton(stringResource(R.string.response_later), { actions.finishResponse() }, Modifier.weight(1f), primary = false, tag = "response-dismiss-offer")
             }
@@ -45,7 +48,7 @@ internal fun CryResponseEntry(state: DepartureUiState, actions: DepartureControl
             else -> Unit
         }
         CareButton(stringResource(R.string.response_start), actions::startResponse,
-            Modifier.fillMaxWidth().heightIn(min = 96.dp), tag = "response-start")
+            Modifier.fillMaxWidth().heightIn(min = dimens.heroButtonHeight), tag = "response-start")
     }
 }
 
@@ -62,8 +65,10 @@ internal fun CryResponseScreen(
     onProfile: () -> Unit,
 ) {
     val assessment = state.responseAssessment
-    val type = LocalPleosTypography.current
-    CareCard(stringResource(R.string.response_title)) {
+    val type = PleosTheme.typography
+    val dimens = PleosTheme.dimens
+    val colors = PleosTheme.colors
+    CareCard(stringResource(R.string.response_title), accentColor = colors.accentColor(PleosAccentTone.WARNING)) {
         DepartureText(stringResource(R.string.response_safe_stop), style = type.titleLarge)
         if (!restricted) DepartureText(stringResource(R.string.response_limit), secondary = true)
         else {
@@ -108,10 +113,10 @@ internal fun CryResponseScreen(
         ResponseNavigationStatus(stopRequest, restricted, onConfirmNavigation, onCancelNavigation)
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (!restricted && maxWidth >= 1_000.dp) Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(24.dp)) { evidence() }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(24.dp)) { plans(); ResponseCareCompletion(state, actions, onProfile) }
-        } else Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        if (!restricted && maxWidth >= dimens.breakpointTwoColumn) Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { evidence() }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { plans(); ResponseCareCompletion(state, actions, onProfile) }
+        } else Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
             if (!restricted) evidence()
             plans()
             if (!restricted) ResponseCareCompletion(state, actions, onProfile)
@@ -124,12 +129,18 @@ internal fun CryResponseScreen(
 
 @Composable
 private fun ResponseEvidenceCard(evidence: ResponseEvidence) {
+    val colors = PleosTheme.colors
+    val accent = if (evidence.stage == ForecastStage.IMMINENT || evidence.stage == ForecastStage.CAUTION) {
+        colors.accentColor(PleosAccentTone.WARNING)
+    } else {
+        colors.accentColor(PleosAccentTone.POSITIVE)
+    }
     val title = stringResource(when (evidence.need) {
         CareNeed.FEED -> R.string.response_feed
         CareNeed.SLEEP -> R.string.response_sleep
         else -> R.string.response_seat
     })
-    CareCard(title) {
+    CareCard(title, accentColor = accent) {
         val problem = when {
             ForecastReasonCode.FUTURE_CARE_RECORD in evidence.reasons || ForecastReasonCode.FUTURE_DRIVE_SESSION in evidence.reasons -> R.string.response_future
             ForecastReasonCode.STALE_CARE_RECORD in evidence.reasons -> R.string.response_stale

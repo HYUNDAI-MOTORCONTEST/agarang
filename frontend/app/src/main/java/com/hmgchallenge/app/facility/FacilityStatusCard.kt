@@ -8,13 +8,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.hmgchallenge.app.R
 import com.hmgchallenge.app.care.CareButton
 import com.hmgchallenge.app.care.CareCard
 import com.hmgchallenge.app.care.CareText
 import com.hmgchallenge.app.driving.LocalUxRestrictions
-import com.hmgchallenge.app.ui.theme.LocalPleosTypography
+import com.hmgchallenge.app.ui.theme.PleosAccentTone
+import com.hmgchallenge.app.ui.theme.PleosRoles.accentColor
+import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.shared.data.DataStatus
 import com.hmgchallenge.shared.facility.FacilityProblem
 import com.hmgchallenge.shared.facility.FacilityState
@@ -39,10 +40,16 @@ internal fun FacilityStatusCard(
     onSelect: (StopCandidate) -> Unit,
 ) {
     val ux = LocalUxRestrictions.current
+    val dimens = PleosTheme.dimens
+    val type = PleosTheme.typography
+    val colors = PleosTheme.colors
     val restricted = ux.requiresDistractionOptimization || ux.noSetup
-    CareCard(stringResource(R.string.facility_title)) {
+    CareCard(
+        title = stringResource(R.string.facility_title),
+        accentColor = if (alert != null) colors.accentColor(PleosAccentTone.WARNING) else null,
+    ) {
         if (state.isDemo) {
-            CareText(stringResource(R.string.facility_demo), style = LocalPleosTypography.current.titleSmall)
+            CareText(stringResource(R.string.facility_demo), style = type.titleSmall)
             CareText(stringResource(R.string.facility_demo_detail))
         } else {
             val status = when {
@@ -57,7 +64,7 @@ internal fun FacilityStatusCard(
                 state.plans.problem == StopPlanningProblem.ACCESS_UNVERIFIED -> R.string.facility_access_unknown
                 else -> R.string.facility_ready
             }
-            CareText(stringResource(status), style = LocalPleosTypography.current.titleSmall)
+            CareText(stringResource(status), style = type.titleSmall)
             if (state.plans.problem != StopPlanningProblem.NONE) CareText(stringResource(R.string.facility_fallback))
             if (!restricted) {
                 state.data.snapshot.value?.let { catalog ->
@@ -69,7 +76,7 @@ internal fun FacilityStatusCard(
         }
         if (alert != null) {
             CareText(stringResource(R.string.facility_last_alert, alert.candidate.facility.name),
-                style = LocalPleosTypography.current.titleLarge)
+                style = type.titleLarge)
             CareButton(stringResource(R.string.facility_acknowledge), onDismissAlert, tag = "facility-alert-dismiss")
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -79,12 +86,12 @@ internal fun FacilityStatusCard(
             val nearest: @Composable () -> Unit = {
                 PlanSummary(stringResource(R.string.facility_nearest), state.plans.nearestSafeStop.candidates.firstOrNull(), state.isDemo, onSelect)
             }
-            if (maxWidth >= 1_000.dp) {
-                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            if (maxWidth >= dimens.breakpointTwoColumn) {
+                Row(horizontalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) {
                     Column(Modifier.weight(1f)) { full() }
                     Column(Modifier.weight(1f)) { nearest() }
                 }
-            } else Column(verticalArrangement = Arrangement.spacedBy(24.dp)) { full(); nearest() }
+            } else Column(verticalArrangement = Arrangement.spacedBy(dimens.sectionSpacing)) { full(); nearest() }
         }
         CareText(when (state.plans.lastRestArea.status) {
             LastRestAreaStatus.AVAILABLE -> stringResource(R.string.facility_last, state.plans.lastRestArea.candidate!!.facility.name)
@@ -100,8 +107,8 @@ internal fun FacilityStatusCard(
 
 @Composable
 private fun PlanSummary(title: String, candidate: StopCandidate?, isDemo: Boolean, onSelect: (StopCandidate) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        CareText(title, style = LocalPleosTypography.current.bodyLargeStrong)
+    Column(verticalArrangement = Arrangement.spacedBy(PleosTheme.dimens.sectionSpacing)) {
+        CareText(title, style = PleosTheme.typography.bodyLargeStrong)
         if (candidate == null) CareText(stringResource(R.string.facility_no_candidate)) else {
             // Round up a display duration only; no distance-to-time conversion.
             val seconds = candidate.travelDurationSeconds!!

@@ -58,6 +58,8 @@ fun VehicleTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () 
     CompositionLocalProvider(
         LocalPleosColors provides colors,
         LocalPleosTypography provides DefaultPleosTypography,
+        LocalPleosDimens provides PleosDimens(),
+        LocalPleosShapes provides PleosShapes(),
     ) {
         MaterialTheme(colorScheme = colors.toColorScheme(dark), typography = MaterialTypography, content = content)
     }
