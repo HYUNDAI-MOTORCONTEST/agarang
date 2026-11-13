@@ -19,9 +19,10 @@ class NavigationRepositoryTest {
     private var sequence = 0
     private val destination = NavigationDestination("destination", "목적지", GeoPoint(37.5, 127.0), 90, 1_234)
     private val existing = NavigationWaypoint("기존 경유지", GeoPoint(37.4, 127.0))
-    private val candidate = StopCandidate(
+    private var candidate = StopCandidate(
         CareFacility("stop", "돌봄 시설", GeoPoint(37.45, 127.01), FacilityType.REST_AREA),
         DataOrigin.PUBLIC_DATA, RouteAccess.CONFIRMED_ON_ROUTE,
+        navigationLocation = GeoPoint(37.45, 127.01), journeyId = "id-0", accessVerifiedAtEpochMillis = now,
     )
 
     private inner class Client : NavigationClient {
@@ -55,6 +56,7 @@ class NavigationRepositoryTest {
     )
 
     private fun prepared(repo: NavigationRepository): StopConfirmation {
+        candidate = candidate.copy(journeyId = repo.snapshots.value.readyValue?.id, accessVerifiedAtEpochMillis = now)
         repo.prepareStop(candidate)
         assertEquals(StopRequestPhase.AWAITING_CONFIRMATION, repo.stopRequest.value.phase)
         return assertNotNull(repo.stopRequest.value.confirmation)
@@ -265,6 +267,20 @@ class NavigationRepositoryTest {
     }
 
     @Test
+    fun candidateFromAnotherRouteOrExpiredAccessNeverReachesClient() {
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        for (invalid in listOf(candidate.copy(journeyId = "old-route"),
+            candidate.copy(accessVerifiedAtEpochMillis = now - NavigationRepository.FRESHNESS_MILLIS),
+            candidate.copy(accessVerifiedAtEpochMillis = now + 1), candidate.copy(navigationLocation = null))) {
+            repo.prepareStop(invalid)
+            assertEquals(StopRequestProblem.INVALID_CANDIDATE, repo.stopRequest.value.problem)
+        }
+        assertTrue(client.writes.isEmpty())
+    }
+
+    @Test
     fun twoExistingWaypointsAreNeverReplaced() {
         val client = Client().apply { slots = listOf(existing, existing.copy(label = "두 번째", location = GeoPoint(37.3, 127.0))) }
         val repo = source(client)
@@ -327,6 +343,51 @@ class NavigationRepositoryTest {
     }
 
     @Test
+    fun providerPoiIdIsPreservedAndMustMatchReadbackAlongWithRoadCoordinates() {
+        candidate = candidate.copy(navigationPoiId = "provider-stop-id")
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        repo.confirmStop(prepared(repo).id)
+        assertEquals("provider-stop-id", client.writes.single().first.navigationPoiId)
+        val added = NavigationWaypoint(candidate.facility.name, candidate.navigationLocation!!)
+        client.listener.onWaypoints(listOf(added))
+        assertEquals(StopRequestPhase.SUBMITTING, repo.stopRequest.value.phase)
+        client.listener.onWaypoints(listOf(added.copy(poiId = "another-provider-poi")))
+        assertEquals(StopRequestPhase.SUBMITTING, repo.stopRequest.value.phase)
+        client.listener.onWaypoints(listOf(added.copy(poiId = candidate.navigationPoiId)))
+        assertEquals(StopRequestPhase.CONFIRMED, repo.stopRequest.value.phase)
+    }
+
+    @Test
+    fun poiIdDoesNotTurnZeroCoordinatesIntoVerifiedRegistration() {
+        candidate = candidate.copy(navigationPoiId = "provider-stop-id")
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        repo.confirmStop(prepared(repo).id)
+        client.listener.onWaypoints(listOf(NavigationWaypoint("returned stop", GeoPoint(0.0, 0.0), candidate.navigationPoiId)))
+        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
+        assertEquals(DataStatus.READY, repo.snapshots.value.status)
+        assertEquals(1, client.writes.size)
+        repo.prepareStop(candidate)
+        assertEquals(1, client.writes.size)
+    }
+
+    @Test
+    fun changedExistingPoiIdentityPreventsAppendingToAStaleSlotList() {
+        val first = existing.copy(poiId = "existing-poi")
+        val client = Client().apply { slots = listOf(first) }
+        val repo = source(client)
+        repo.start()
+        val confirmation = prepared(repo)
+        client.slots = listOf(first.copy(poiId = "changed-poi-at-same-coordinate"))
+        repo.confirmStop(confirmation.id)
+        assertTrue(client.writes.isEmpty())
+        assertEquals(StopRequestProblem.ROUTE_CHANGED, repo.stopRequest.value.problem)
+    }
+
+    @Test
     fun slotChangeDuringConfirmationReadbackCancelsWrite() {
         val client = Client()
         val repo = source(client)
@@ -382,6 +443,39 @@ class NavigationRepositoryTest {
     }
 
     @Test
+    fun temporaryGuidanceResetCanConfirmOnlyAfterSameDestinationIsReadAgain() {
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        val originalJourney = repo.snapshots.value.readyValue!!.id
+        repo.confirmStop(prepared(repo).id)
+        client.listener.onRouteCleared()
+        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
+        client.slots = listOf(NavigationWaypoint(candidate.facility.name, candidate.navigationLocation!!))
+        client.listener.onRouteState(true)
+        assertNotEquals(originalJourney, repo.snapshots.value.readyValue!!.id)
+        assertEquals(StopRequestPhase.CONFIRMED, repo.stopRequest.value.phase)
+        assertEquals(1, client.writes.size)
+    }
+
+    @Test
+    fun waypointOnAnotherDestinationCannotConfirmAnUncertainPreviousRequest() {
+        val client = Client()
+        val repo = source(client)
+        repo.start()
+        repo.confirmStop(prepared(repo).id)
+        client.listener.onRouteCleared()
+        client.autoRead = false
+        client.listener.onRouteState(true)
+        // Waypoints may arrive before the destination response. The old destination is no proof.
+        client.listener.onWaypoints(listOf(NavigationWaypoint(candidate.facility.name, candidate.navigationLocation!!)))
+        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
+        client.listener.onDestination(destination.copy(key = "unrelated-new-destination"))
+        assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
+        assertEquals(1, client.writes.size)
+    }
+
+    @Test
     fun alreadyRegisteredStopDoesNotCreateDuplicate() {
         val client = Client().apply { slots = listOf(NavigationWaypoint(candidate.facility.name, candidate.facility.location)) }
         val repo = source(client)
@@ -403,6 +497,42 @@ class NavigationRepositoryTest {
         assertEquals(DataStatus.PERMISSION_DENIED, repo.snapshots.value.status)
         assertEquals(StopRequestPhase.OUTCOME_UNKNOWN, repo.stopRequest.value.phase)
         assertEquals(StopRequestProblem.PERMISSION_DENIED, repo.stopRequest.value.problem)
+    }
+
+    @Test
+    fun localPreflightRejectionDoesNotOfferConfirmationOrDiscardEta() {
+        val base = Client()
+        val client = object : NavigationClient by base {
+            override fun waypointPreflight(candidate: StopCandidate) = StopRequestProblem.INVALID_CANDIDATE
+        }
+        val repo = NavigationRepository({ client }, clock = { now })
+        repo.start()
+        val reads = base.reads
+        repo.prepareStop(candidate.copy(journeyId = repo.snapshots.value.readyValue!!.id))
+        assertEquals(StopRequestPhase.FAILED, repo.stopRequest.value.phase)
+        assertEquals(StopRequestProblem.INVALID_CANDIDATE, repo.stopRequest.value.problem)
+        assertEquals(reads, base.reads)
+        assertTrue(base.writes.isEmpty())
+        assertEquals(DataStatus.READY, repo.snapshots.value.status)
+        assertEquals(DataStatus.READY, repo.connection.value)
+    }
+
+    @Test
+    fun provenPreDispatchFailureIsFailedRatherThanAnUnknownNativeMutation() {
+        val base = Client()
+        val client = object : NavigationClient by base {
+            override fun addWaypoint(candidate: StopCandidate, slot: Int) {
+                throw NavigationRequestNotSent(StopRequestProblem.PERMISSION_DENIED)
+            }
+        }
+        val repo = NavigationRepository({ client }, clock = { now })
+        repo.start()
+        repo.confirmStop(prepared(repo).id)
+        assertEquals(StopRequestPhase.FAILED, repo.stopRequest.value.phase)
+        assertEquals(StopRequestProblem.PERMISSION_DENIED, repo.stopRequest.value.problem)
+        assertTrue(base.writes.isEmpty())
+        assertEquals(0, base.releases)
+        assertEquals(DataStatus.READY, repo.snapshots.value.status)
     }
 
     @Test

@@ -18,7 +18,7 @@ class DemoNavigationClient(initial: NavigationDestination) : NavigationClient {
     override fun requestWaypoints() { listener?.onWaypoints(slots) }
     override fun addWaypoint(candidate: StopCandidate, slot: Int) {
         require(candidate.origin == DataOrigin.DEMO && slot == slots.size + 1 && slot in 1..2)
-        slots = slots + NavigationWaypoint(candidate.facility.name, candidate.facility.location)
+        slots = slots + NavigationWaypoint(candidate.facility.name, candidate.navigationLocation ?: candidate.facility.location, candidate.navigationPoiId)
         requestWaypoints()
     }
     override fun release() { listener = null }

@@ -1,7 +1,7 @@
 # 예보 엔진 (#4)
 
 구현: `shared/forecast/ForecastEngine.kt`, `ForecastPolicy.kt`, `AgeReferenceModel.kt`.
-Android·Pleos SDK·네트워크에 의존하지 않는 Kotlin 판단 코드다. #3의 확인된 `CareRecord`를 받아 F2·F4·F5가 같은 결과를 소비하도록 한다. 화면 연결은 #7·#8에서, 실제 ETA 공급자는 #5에서 구현한다.
+Android·Pleos SDK·네트워크에 의존하지 않는 Kotlin 판단 코드다. #3의 확인된 `CareRecord`를 받아 F2·F4·F5가 같은 결과를 소비하도록 한다. F2 화면은 #7의 [출발 예보](departure.md), F4는 #8의 [울음 대응](response.md)에 연결했다. 실제 ETA 공급자는 #5에서 구현한다.
 
 ## 입력과 결과
 
@@ -84,4 +84,4 @@ Android·Pleos SDK·네트워크에 의존하지 않는 Kotlin 판단 코드다.
 - debug APK SHA-256: `8c41fdfdbc1f177730e957a573e5d4bbed2386ff9ecf2b5393c90b5edfa8d765`.
 - 빌드 로그·테스트 XML·요약은 Git에서 제외한 `.dev/verification/issue4/2026-11-11/`에 보관한다. 커밋 전 소스이므로 소스 지문으로 검증 입력을 식별한다.
 
-이번 이슈는 계산 엔진과 결과 계약 범위이며, 앱의 예보 화면이 완성됐다는 의미는 아니다.
+위 검증은 #4 당시의 계산 엔진과 결과 계약 범위다. 이후 #7의 앱 화면 연결과 최신 빌드·실행 검증은 [출발 예보](departure.md)에 별도로 기록한다.

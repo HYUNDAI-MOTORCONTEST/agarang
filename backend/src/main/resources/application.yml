@@ -7,3 +7,5 @@ server:
 
 app:
   version: 0.0.1
+  facilities:
+    catalog: ${HMG_FACILITY_CATALOG:classpath:facilities/public-catalog.json}

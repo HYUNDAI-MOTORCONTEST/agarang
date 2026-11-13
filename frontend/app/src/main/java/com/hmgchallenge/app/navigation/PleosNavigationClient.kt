@@ -26,6 +26,8 @@ import com.hmgchallenge.shared.journey.GeoPoint
 import com.hmgchallenge.shared.journey.NavigationClient
 import com.hmgchallenge.shared.journey.NavigationDestination
 import com.hmgchallenge.shared.journey.NavigationWaypoint
+import com.hmgchallenge.shared.journey.NavigationRequestNotSent
+import com.hmgchallenge.shared.journey.StopRequestProblem
 
 /** Owns the SDK connection and translates every binder callback onto the main looper. Creation,
  * requests and release are called on that same looper by the foreground ViewModel session.
@@ -62,7 +64,8 @@ class PleosNavigationClient(
         }
         override fun onDestinationInfo(destinationInfo: DestinationInfo) = deliver {
             // API Reference: remainTime is a duration in SECONDS; remainDistance is METERS.
-            // Use road coordinates (latitude/longitude), not optional display coordinates.
+            // Preserve geographic latitude/longitude, not optional map-display coordinates.
+            // These fields alone do not verify a facility entrance or current-route access.
             // docs/agarang/navigation.md links the exact DestinationInfo API Reference.
             onDestination(NavigationDestination(
                 key = "${destinationInfo.poiId}:${destinationInfo.latitude}:${destinationInfo.longitude}",
@@ -74,7 +77,7 @@ class PleosNavigationClient(
             ))
         }
         override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) = deliver {
-            onWaypoints(waypointInfoList.map { NavigationWaypoint(it.name, GeoPoint(it.latitude, it.longitude)) })
+            onWaypoints(waypointInfoList.map { NavigationWaypoint(it.name, GeoPoint(it.latitude, it.longitude), it.poiId.takeIf(String::isNotBlank)) })
         }
         override fun onRouteStarted(routeStartInfo: RouteStartInfo) = deliver {
             lastStatus = NavigationStatus.INITIALIZING
@@ -149,17 +152,23 @@ class PleosNavigationClient(
     override fun requestDestination() { checkNotNull(helper).getDestinationInfo() }
     override fun requestWaypoints() { checkNotNull(helper).getWaypointInfo() }
 
+    override fun waypointPreflight(candidate: StopCandidate): StopRequestProblem? = when {
+        !candidate.canRequestNavigation || candidate.navigationPoiId == null -> StopRequestProblem.INVALID_CANDIDATE
+        context.checkSelfPermission(WRITE_PERMISSION) != PackageManager.PERMISSION_GRANTED -> StopRequestProblem.PERMISSION_DENIED
+        else -> null
+    }
+
     override fun addWaypoint(candidate: StopCandidate, slot: Int) {
-        require(candidate.canRequestNavigation && slot in 1..2)
-        if (context.checkSelfPermission(WRITE_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            throw SecurityException("Navigation write permission unavailable")
-        }
+        // Coordinate-only requests are undocumented and returned zero geographic coordinates in the
+        // test service. Require a provider POI ID; never manufacture one from a catalog row ID.
+        waypointPreflight(candidate)?.let { throw NavigationRequestNotSent(it) }
+        if (slot !in 1..2) throw NavigationRequestNotSent(StopRequestProblem.INVALID_CANDIDATE)
         checkNotNull(helper).addWaypoint(RequestWaypointInfo(
-            latitude = candidate.facility.location.latitudeDegrees,
-            longitude = candidate.facility.location.longitudeDegrees,
+            latitude = requireNotNull(candidate.navigationLocation).latitudeDegrees,
+            longitude = requireNotNull(candidate.navigationLocation).longitudeDegrees,
             poiName = candidate.facility.name,
             waypointIndex = if (slot == 1) WaypointIndex.FIRST else WaypointIndex.SECOND,
-            poiId = "",
+            poiId = requireNotNull(candidate.navigationPoiId),
             address = "",
             poiSubId = "0",
         ))

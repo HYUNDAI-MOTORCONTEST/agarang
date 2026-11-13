@@ -1,13 +1,13 @@
 # 내비 ETA·경유지 어댑터 (#5)
 
 구현일: 2026-11-12. `shared/journey/NavigationSource`·`NavigationRepository`와 앱의 `PleosNavigationClient`가 경계다.
-실제 SDK와 데모는 같은 상태·콜백 계약을 사용하며 SDK 객체는 앱 밖으로 전달하지 않는다.
+실제 SDK와 데모는 같은 상태·콜백 계약을 사용하며 SDK 객체는 앱 밖으로 전달하지 않는다. 후속 확인: 2026-11-13. 최신 실측·검증 지문은 [후속 재현 기록](navigation-repro.md)을 따른다.
 
 ## 단위와 권한의 확인 근거
 
 필요한 공식 페이지만 읽고 직접 요약했다. 확인: 2026-11-12.
 
-- [DestinationInfo API Reference](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/destination-info/entry): `remainTime`은 남은 **초**, `remainDistance`는 **미터**, `latitude`·`longitude`는 **도**다. 표시용 좌표를 도로 좌표 대신 사용하지 않는다.
+- [DestinationInfo API Reference](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/destination-info/entry): `remainTime`은 남은 **초**, `remainDistance`는 **미터**, `latitude`·`longitude`는 **도**다. 지리 좌표를 보존하고 표시용 좌표로 대체하지 않는다. 지리 좌표 자체를 시설 진입 근거로 간주하지 않는다.
 - [RouteStateInfo API Reference](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/route-state-info/entry)는 `isRouting`을 활성 경로 여부로 설명하지만, 테스트 서비스 3.0.4에서는 실제 `ROUTE_GUIDING` 중에도 false를 반환했다. 앱은 [NaviMode의 안내 모드](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.constants/navi-mode/entry)를 조회해 판단한다. `ROUTE_GUIDING`·`SIMULATION_GUIDING`을 구분하며, 상태 이벤트만으로 경로 취소를 확정하지 않는다. 미설정 경로를 ETA 0으로 만들지 않는다.
 - [초기화](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/initialization-and-release): 연결 완료 뒤에 리스너를 등록하고 조회한다. 중지할 때 리스너 제거 후 해제한다.
 - [권한](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/declaring-permissions), [SDK 사용 신청](https://document.pleos.ai/docs/pleos-only/create-my-project): NaviHelper는 별도 사용 신청 없이 제공된다. 앱에는 조회용 `NAVI_ROUTE`와 사용자 확인 뒤 경유지 추가에 쓰는 `NAVI_ROUTE_SEARCH`만 선언한다. 설치별 실제 권한은 호출 전에 다시 확인한다. `NAVI_CUSTOM_MAP`, 위치·음성·차량 제어 권한은 추가하지 않는다.
@@ -26,19 +26,21 @@
 
 ## 경유지 확인
 
-1. 접근이 확인된 실제 후보를 선택하면 현재 목적지·경유지 목록을 다시 읽는다. 데모 출처는 실제 SDK에 보내지 않는다.
+1. 접근이 확인된 실제 후보를 선택하면 현재 목적지·경유지 목록을 다시 읽는다. #6의 후보에는 실제 경로 공급자가 준 진입 좌표·현재 여정 ID·접근 확인 시각이 있어야 한다. 현재 Pleos 어댑터는 호환되는 공급자의 내비 POI ID도 요구하며, 없으면 확인·전송 전에 차단한다. 선택 직전과 확인 후 재조회에서 여정 일치와 60초 만료를 다시 검사한다. 공공시설 중심 좌표를 진입 좌표로 대입하지 않으며 데모 출처는 실제 SDK에 보내지 않는다.
 2. 목적지와 사용 가능한 슬롯을 묶은 30초 유효 확인 ID를 제공한다. 이 단계까지 내비 변경은 없다.
 3. 사용자가 확인하면 목적지와 경유지 목록을 다시 읽어 비교한다. 기존 1개는 유지하고 두 번째 슬롯에 추가한다. 이미 2개이면 덮어쓰지 않고 실패를 알린다.
-4. `addWaypoint` 반환이나 탐색 완료 이벤트만으로 성공을 표시하지 않는다. 읽어 온 경유지 목록에서 기존 목록과 추가 좌표를 확인한 뒤 성공으로 표시한다.
+4. `addWaypoint` 반환이나 탐색 완료 이벤트만으로 성공을 표시하지 않는다. 목적지·경유지 양쪽 조회가 끝나고 전송 전 목적지가 유지됐는지 확인한다. 기존 경유지 목록과 추가 좌표·제공된 POI ID가 일치해야 성공으로 표시한다. 같은 목적지의 안내가 재탐색 중 잠시 초기화됐다가 돌아온 경우도 이 재확인을 거친다.
 5. 전송 뒤 타임아웃·연결 상실은 결과 미확인으로 남기고 자동 재전송을 막는다. 이후 읽기에서 확인되면 성공으로 바꾼다. 이미 등록된 같은 위치는 다시 추가하지 않는다.
 
 현재 에뮬레이터의 SDK는 경유지 조회에 `(0, 0)` 좌표 항목을 반환했다. 이를 빈 슬롯이나 확인된 실제 경유지로 취급하지 않는다. 실제 SDK 공급자에서는 경유지 정보 실패로 처리해 **추가 요청을 차단하고 ETA는 유지**한다. 데모 공급자의 명시적인 합성 좌표와는 구분한다. 이 이미지에서 실제 경유지 등록 성공은 확인하지 못했으며, SDK/서비스가 유효한 경유지 정보를 반환하는 환경에서 추가 검증해야 한다.
 
-SDK 조회·변경 API에는 요청 ID나 조건부 갱신 기능이 없다. 앱의 재확인은 원자적인 차량 측 트랜잭션을 보장하지 않으며, 외부 앱의 동시 변경을 완전히 잠글 수 없다. 좌표 일치는 보수적으로 정확한 도로 좌표를 비교한다. 공급자가 좌표를 바꾸어 반환하면 결과 미확인으로 남을 수 있다.
+2026-11-12 #6 검증에서는 읽기 전용 스모크 두 번이 `read=FAILED`·추가 경로 콜백 없음으로 끝났다. 후속 검증에서는 기본 내비의 초기화 지연 화면에서 ‘다시 시도’한 뒤 EMPTY·READY·ETA 수신·활성 경로 재연결이 다시 동작했다. 공식 POI ID를 사용한 경유지도 ID는 반영됐지만 지리 좌표는 0,0이었다. 요청 반영 흔적과 검증된 등록 성공을 구분하며 실등록 성공은 여전히 미확인이다. 복구의 내부 원인은 확정하지 않았다. [후속 실측](navigation-repro.md), [시설·캐시·데모 검증](facilities.md).
 
-`poiId`를 알 수 없는 공공시설은 좌표·이름과 빈 POI ID로 요청한다. 해당 조합의 실제 내비 허용 여부는 에뮬레이터 검증 항목이며, 실패 시 성공으로 표시하지 않는다. 실제 시설 공급자·접근성 검증은 #6, 출발·울음 대응 화면의 시설 선택은 #7·#8 범위다.
+SDK 조회·변경 API에는 요청 ID나 조건부 갱신 기능이 없다. 앱의 재확인은 원자적인 차량 측 트랜잭션을 보장하지 않으며, 외부 앱의 동시 변경을 완전히 잠글 수 없다. 공급자가 검증한 진입 좌표와 SDK의 지리 좌표를 보수적으로 정확히 비교한다. SDK의 위경도 필드 자체가 시설 진입 가능성을 증명하지는 않는다. 공급자가 좌표를 바꾸어 반환하면 결과 미확인으로 남을 수 있다.
 
-## 검증 상태 (2026-11-12)
+`poiId`를 알 수 없는 공공시설은 실제 Pleos 요청을 보내지 않는다. 빈 ID의 지원은 공식 문서에 없고 현재 환경의 좌표 전용 요청에서 유효한 결과를 확인하지 못했다. 공공시설 ID를 내비 ID로 만들어 넣지 않는다. 전송 전 로컬 검사에서 거부한 경우는 FAILED이며 ETA·읽기 연결을 유지한다. 전송 뒤 불명확한 실패는 OUTCOME_UNKNOWN이다. 실제 시설 공급자·접근성 검증은 #6, 출발·울음 대응 화면의 시설 선택은 #7·#8 범위다.
+
+## 최초 #5 검증 상태 (2026-11-12)
 
 - 로컬 Kotlin 구문·XML·`git diff --check` 통과.
 - 공용 **108개**, 서버 **1개**, 총 **109개** 테스트 통과(실패·오류·스킵 0). 이번 내비 연동 테스트는 30개이며, 0,0 경유지 차단과 ETA 보존도 포함한다. 단위·시간 오버플로, 지연 콜백, 목적지·모드 변경, 경로 취소, 권한 거부, 타임아웃·오래된 값, 두 개 경유지 보존, 확인 만료·중복 요청, 데모 분리와 ETA→예보 갱신을 검증했다.
@@ -70,7 +72,7 @@ SDK 조회·변경 API에는 요청 ID나 조건부 갱신 기능이 없다. 앱
 
 최종 소스 SHA-256: `52f49aea9a5689ae01a8b3f3e6b313dd33e9c7f8500a72049fed375a97d45fe8`.
 debug APK SHA-256: `0ebafc2e756b93eac9f3f64130425dba1ccc02e885151ec82e2e2e5b1c8fbb75`.
-현재 작업 폴더의 소스·빌드 입력 79개 파일이 검증 압축본과 일치한다. 커밋 전 소스이므로 위 지문으로 빌드 입력을 구분한다. 요약·빌드 로그·테스트 XML은 `.dev/verification/issue5/2026-11-12/`에 보관한다.
+당시 작업 폴더의 소스·빌드 입력 79개 파일이 검증 압축본과 일치했다. 커밋 전 소스이므로 위 지문으로 당시 빌드 입력을 구분한다. 요약·빌드 로그·테스트 XML은 `.dev/verification/issue5/2026-11-12/`에 보관한다. 최신 소스·검증은 [후속 기록](navigation-repro.md)에서 구분한다.
 
 실행한 빌드·읽기 검증 명령:
 

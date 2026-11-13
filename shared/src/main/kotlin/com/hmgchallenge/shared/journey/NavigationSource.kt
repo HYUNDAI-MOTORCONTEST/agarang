@@ -6,8 +6,8 @@ import com.hmgchallenge.shared.data.SnapshotSource
 import com.hmgchallenge.shared.facility.StopCandidate
 import kotlinx.coroutines.flow.StateFlow
 
-data class NavigationWaypoint(val label: String, val location: GeoPoint) {
-    init { require(label.isNotBlank()) }
+data class NavigationWaypoint(val label: String, val location: GeoPoint, val poiId: String? = null) {
+    init { require(label.isNotBlank() && poiId?.isNotBlank() != false) }
 }
 
 /** Normalized at the SDK boundary. These are durations in seconds, never epoch seconds or minutes.
@@ -48,12 +48,17 @@ interface NavigationClient {
     fun requestRouteState()
     fun requestDestination()
     fun requestWaypoints()
+    /** Local capability/permission check only; must not change the native route. */
+    fun waypointPreflight(candidate: StopCandidate): StopRequestProblem? = null
     fun addWaypoint(candidate: StopCandidate, slot: Int)
     fun release()
 }
 
 enum class StopRequestPhase { IDLE, CHECKING, AWAITING_CONFIRMATION, SUBMITTING, CONFIRMED, FAILED, OUTCOME_UNKNOWN }
 enum class StopRequestProblem { ROUTE_UNAVAILABLE, ROUTE_CHANGED, WAYPOINTS_FULL, INVALID_CANDIDATE, PERMISSION_DENIED, REQUEST_FAILED, TIMED_OUT }
+
+/** The client can prove that no mutation IPC began. Unknown SDK failures must not use this type. */
+class NavigationRequestNotSent(val problem: StopRequestProblem) : Exception(problem.name)
 
 data class StopConfirmation(
     val id: String,

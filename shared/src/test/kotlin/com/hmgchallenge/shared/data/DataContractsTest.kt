@@ -147,7 +147,9 @@ class DataContractsTest {
     fun demoAndUnconfirmedFacilitiesCannotRequestRealNavigation() {
         val demo = DemoJourney.create(now).stops.snapshots.value.readyValue!!.first()
         assertTrue(!demo.canRequestNavigation)
-        assertTrue(demo.copy(origin = DataOrigin.PUBLIC_DATA).canRequestNavigation)
+        assertTrue(!demo.copy(origin = DataOrigin.PUBLIC_DATA).canRequestNavigation)
+        assertTrue(demo.copy(origin = DataOrigin.PUBLIC_DATA, journeyId = "route",
+            accessVerifiedAtEpochMillis = now, navigationLocation = GeoPoint(37.0, 127.0)).canRequestNavigation)
         assertTrue(!demo.copy(origin = DataOrigin.PUBLIC_DATA, routeAccess = RouteAccess.UNKNOWN).canRequestNavigation)
     }
 
