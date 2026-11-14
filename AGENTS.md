@@ -118,6 +118,7 @@ adb logcat -s HmgApp                 # 앱 로그
 ## 코드 작업 규칙
 
 - 차량 UI(Compose 화면·컴포넌트)를 만들거나 고칠 때는 **`vehicle-ui` 스킬**의 절차를 따른다. 원본은 `.claude/skills/vehicle-ui/SKILL.md`이고, Codex는 같은 폴더를 가리키는 심볼릭 링크 `.agents/skills/vehicle-ui`로 읽는다. 스킬을 고칠 때는 원본만 고친다.
+- Google Drive 산출물·문서·영상·스크린샷을 조회·업로드·정리할 때는 **`agarang-drive` 스킬**(`.claude/skills/agarang-drive/SKILL.md`, Codex 링크 `.agents/skills/agarang-drive`)을 따른다. 드라이브 접근은 **`아가랑` 루트 폴더 하위만 허용**하며 외부 파일·폴더 조회/이동은 금지한다. 루트에 직접 파일을 올리지 말고 `01_`~`04_` 패키지 폴더에 배치한 뒤 `00_아가랑_프로젝트_한눈에보기`를 동기화하며, Drive ID·개인 이메일·링크는 Git 추적 파일에 넣지 않는다.
 - Vehicle SDK: `Vehicle(context).initialize()` → `getXxx()`로 도메인 객체 획득 → capability/get/set/callback. 결과는 비동기(`onComplete`/`onFailed`)다. 콜백이 끝나기 전에 `release()`하지 않는다. 예: `frontend/app/.../MainViewModel.kt`.
 - SDK가 없는 환경이나 권한 오류에서도 앱이 죽지 않게 `onFailed`와 예외를 처리하고, 실패 상태를 화면에 보여 준다.
 - 에뮬레이터에서 VIN은 "invalid"로 나온다(이미지 쪽 문제로 보임). 앱 로직이 VIN 값에 의존하지 않게 한다.
@@ -134,7 +135,7 @@ adb logcat -s HmgApp                 # 앱 로그
 | --- | --- | --- |
 | 지침 | `CLAUDE.md`(첫 줄 `@AGENTS.md` import + Claude 전용 메모) | `AGENTS.md`(이 파일) |
 | Context7 MCP | `.mcp.json` + `.claude/settings.json`의 `enabledMcpjsonServers: ["context7"]` | `.codex/config.toml`의 `[mcp_servers.context7]` |
-| 스킬 | `.claude/skills/vehicle-ui/`(원본) | `.agents/skills/vehicle-ui` → 원본 심볼릭 링크 |
+| 스킬 | `.claude/skills/`(`vehicle-ui`, `agarang-drive` 원본) | `.agents/skills/` → 원본 심볼릭 링크 |
 | 세션 시작 훅 | `.claude/settings.json` `SessionStart`(matcher `startup`) → `scripts/setup.sh` | `.codex/config.toml` `[[hooks.SessionStart]]`(matcher `startup`) → `scripts/setup.sh` |
 | 처음 1회 | 폴더 신뢰(workspace trust) 창에서 승인해야 프로젝트 설정·MCP 자동 승인이 적용됨 | 프로젝트를 신뢰(trusted)해야 `.codex/` 설정이 로드되고, `/hooks`에서 훅을 검토·신뢰해야 실행됨 |
 
