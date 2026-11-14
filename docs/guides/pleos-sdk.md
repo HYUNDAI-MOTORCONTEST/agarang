@@ -52,7 +52,7 @@
 | `NAVI_CUSTOM_MAP` | `requestNavigationScreen()` |
 
 - API별 정확한 요구 권한은 API 레퍼런스의 `@RequiresPermission`이 기준이다.
-- [문서에 없음] 우리는 쓰는 기능만 선언한다. 경유지 추가가 핵심이면 `NAVI_ROUTE` + `NAVI_ROUTE_SEARCH`. 내비 화면을 직접 띄우지 않으면 `NAVI_CUSTOM_MAP`은 선언하지 않는다. (현재 매니페스트에는 아직 NAVI 권한이 없다.)
+- [문서에 없음] 우리는 쓰는 기능만 선언한다. 경유지 추가가 핵심이면 `NAVI_ROUTE` + `NAVI_ROUTE_SEARCH`. 내비 화면을 직접 띄우지 않으면 `NAVI_CUSTOM_MAP`은 선언하지 않는다. 현재 #5 어댑터가 조회·경유지 추가 권한 두 개를 선언하며 설치별 실제 허용은 호출 전에 확인한다.
 
 ### 1.2 초기화·해제 (N-initialization-and-release, N-error-handling)
 
@@ -85,7 +85,8 @@ class NaviHelper(context: Context) {
 - `requestRoute()`가 예외 없이 끝나도 탐색 완료가 아니다. 최종 결과는 이벤트로 확인한다. 조회 API도 값을 반환하지 않고 대응 이벤트로 준다.
 - `RouteOption`: `RECOMMENDED`, `SHORT_DISTANCE`, `SHORT_TIME`, `FREE`(무료 도로), `HIGHWAY`, `COMFORTABLE`, `SCHOOL_ZONE`(스쿨존 고려).
 - [AAR] `RouteInfo` 생성자 순서: `latitude, longitude, displayLatitude?, displayLongitude?, poiName, poiId, address, poiSubId, routeOption, poiProvider, isMobileRequest`(뒤쪽은 기본값 있음). **원문 Java 예제 중 일부는 경도를 첫 인자로 넘기는데, 실제 첫 인자는 위도다.** Kotlin에서는 이름 있는 인자로 넘긴다.
-- [AAR] `DestinationInfo`: 위경도, 표시 좌표, `name`, `address`, `remainDistance`, `remainTime`, `tollFare`, `poiId`·`poiSubId`·`poiProvider`. 남은 거리·시간 단위는 문서에 없다(확인 필요, 9장).
+- [AAR] `DestinationInfo`: 위경도, 표시 좌표, `name`, `address`, `remainDistance`, `remainTime`, `tollFare`, `poiId`·`poiSubId`·`poiProvider`.
+- [문서, 2026-11-12 추가 확인] [DestinationInfo API Reference](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/destination-info/entry)는 `remainDistance`를 **미터**, `remainTime`을 **남은 초**, 위경도를 **도**로 설명한다. `remainTime`을 epoch 시각으로 넣지 않고 관측 시각에 더한다. `TripInfo.eta` 등 다른 필드의 단위로 확장 적용하지 않는다.
 
 ### 1.4 경유지 (N-waypoint-settings, N-route-with-waypoints)
 
@@ -93,6 +94,8 @@ class NaviHelper(context: Context) {
 - `addWaypoint(RequestWaypointInfo)`로 추가, `removeWaypoint(WaypointIndex)`로 삭제, `getWaypointInfo()` → `onWayPointInfo(List<WaypointInfo>)`. 경유지 도착 시 `onWayPointArrived(WaypointArrivedInfo)`, 변경 시 `onWaypointChanged(WaypointChangedInfo)`.
 - 목적지와 경유지를 한 번에: `requestRouteWithWaypoints(RouteWithWaypointsRequest(destination: RouteInfo, waypoints: List<RequestWaypointInfo>))`. 권한 `NAVI_ROUTE_SEARCH`. 결과는 `onRouteStarted`·`onRoutingCompleted`·`onError`.
 - [AAR] `RequestWaypointInfo(latitude, longitude, poiName, waypointIndex, poiId, address, poiSubId, poiProvider)`.
+- [문서, 2026-11-13 추가 확인] [요청 필드](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/request-waypoint-info/entry)·[응답 필드](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/NaviHelper/navi-helper/ai.pleos.playground.navi.data/waypoint-info/entry): `poiId`는 특정 지도 POI의 식별자이며 요청에는 기본값이 없다. `poiProvider`는 공급자 이름이고 기본값은 빈 문자열이다. 위경도는 도 단위 지리 좌표, `displayLatitude`·`displayLongitude`는 별도의 nullable 표시 좌표다. 지리 좌표가 시설 진입 지점이라는 보장은 없으며 빈 ID 허용·0,0 처리·표시 좌표 대체도 명시되지 않았다.
+- [팀 정책·실측, 2026-11-13] 현재 Pleos 어댑터는 호환되는 공급자가 준 POI ID가 없으면 실제 추가 요청 전에 거부한다. 에뮬레이터 실측 결과, 경유지 미등록 시 `onWayPointInfo`는 빈 목록을 반환하고, 공식 `poiId`로 등록하면 기본 내비 재탐색(`onRouteCancelled`/`SAFE_GUIDING` → `onWaypointChanged(FIRST, ADD)` → `ROUTE_GUIDING`) 후 `WaypointInfo`에 `poiId`·이름·남은 거리·시간을 담아 돌려주지만 서비스(`NavigationUseCase.getWaypointRoutePointItem`) 단계에서 위경도를 `0.0, 0.0`(`displayLatitude/Longitude = null`)으로 생략한다. 따라서 `poiId == null`인 `(0, 0)` 응답은 불확실한 슬롯으로 차단하고 ETA를 유지하며, 유효한 `poiId`가 포함된 `(0, 0)` SDK 응답은 전송 전 목적지와 일치하는 재조회 뒤 동일 `poiId` 비교(비영 좌표 반환 시에는 좌표+`poiId` 동시 비교)로 등록 성공을 확정한다. [후속 재현 기록](../agarang/navigation-repro.md).
 - 원문 표기 주의: 콜백 이름이 `onWaypointInfo`/`onWayPointInfo`로 섞여 있다. [AAR] 실제는 `onWayPointInfo`, `onWayPointArrived`, `onWaypointChanged`.
 
 ### 1.5 이벤트 (N-event-listeners)
@@ -107,7 +110,9 @@ class NaviHelper(context: Context) {
 | 오류 | `onError(NaviErrorCode)` |
 
 - 우리 앱에 쓸모 있는 것 [AAR]: `RouteStartInfo`(duration, distance, tollFare, name), `DestinationArrivedInfo`, `TripInfo`(eta, distance, 도착 예상 SOC 등, `requestTrip(TripRequest)`로 요청), `NavigationStatus`(`INACTIVE`, `INITIALIZING`, `FREE_DRIVE`, `ROUTE_DRIVE`, RN에서 v3.0.5에 바뀜), `CautionPoint`(스쿨존·과속방지턱 등 + 남은 거리).
-- 휴게소 POI 타입·경로 폴리라인 API는 없다([AAR] `RoutePointPoiType` = NORMAL, EV_CHARGING뿐).
+- [AAR·실기 추가 확인, 2026-11-12] `onRouteEnded()`는 `onRoutingCompleted()`로 대체하도록 폐기된 **탐색 완료** 콜백이다. 에뮬레이터의 내비 서비스 3.0.4가 구형 이름을 보내므로 둘 다 처리한다. 이를 경로 취소로 해석하면 후속 ETA 응답을 버리게 된다. 실제 활성 경로 종료·취소 여부는 상태 조회·취소 이벤트로 구분한다.
+- [실기 추가 확인, 2026-11-12~13] 같은 서비스는 `ROUTE_GUIDING` 중 `isRouting=false`를 반환한다. 원문의 flag 설명만으로 안내 여부를 판단하지 않고 `NaviMode`를 조회한다. `NavigationStatus` 변경은 재조회 신호로 사용한다. `poiId` 없이 `(0, 0)` 좌표만 온 경유지 조회는 빈 슬롯으로 버리지 않고 불확실한 정보(`FAILED`/`REQUEST_FAILED`)로 처리해 추가를 차단한다. 반면 `poiId`·이름·남은 거리/시간이 채워진 채 좌표만 `0.0, 0.0`으로 생략돼 오는 에뮬레이터 서비스 응답은 동일 목적지 재조회와 `poiId` 일치를 확인해 등록 완료(`CONFIRMED`)로 확정한다. [현재 구현·검증 경계](../agarang/navigation.md).
+- [AAR·공개 시그니처, 2026-11-13] 확인한 `NaviHelper` 공개 표면에는 현재 경로의 전체 폴리라인·방향별 휴게소 접근성을 제공하는 인터페이스가 없다. `TripInfo.summary`의 `RoutePointInfo` 목록은 전체 도로 경로·시설 진입 근거와 구분한다. 확인한 `RoutePointPoiType`은 NORMAL·EV_CHARGING이다. 내부 API는 호출하지 않았다.
 
 ### 1.6 오류 (N-error-handling)
 
@@ -125,7 +130,7 @@ class NaviHelper(context: Context) {
 ### 1.7 에뮬레이터·제약
 
 - 원문 Emulator setup은 일반 에뮬레이터 설치·Virtual Console·마이크·Cold boot 링크만 있다. NaviHelper 전용 에뮬레이터 동작은 문서에 없다.
-- [팀 관찰, 2026-10-25] 에뮬레이터에 Navi Service(`ai.pleos.playground.service.navi` 3.0.4)와 내비 앱(`ai.umos.maps.android.navigation.app`)이 있다. 경로 요청·도착 이벤트가 실제로 오는지는 아직 시험하지 않았다(9장).
+- [팀 관찰] 에뮬레이터에 Navi Service(`ai.pleos.playground.service.navi` 3.0.4)와 내비 앱(`ai.umos.maps.android.navigation.app`)이 있다. 2026-11-12~13의 경로 생성·ETA·재연결 검증은 [내비 기록](../agarang/navigation.md), 경유지 0,0 응답과 초기화 지연 복구는 [후속 기록](../agarang/navigation-repro.md)을 따른다. 실제 도착 이벤트는 미검증이다.
 - 내비 탑재 여부는 앱이 알 수 없다(FAQ). `onFailed`나 오류가 오면 내비 연동 UI를 숨긴다.
 
 ### 1.8 스케치 (팀 작성)
@@ -147,16 +152,16 @@ class NaviBridge(context: Context, private val scope: CoroutineScope) {
     )
 
     /** 사용자가 확인 버튼을 눌렀을 때만 부른다(동의 없는 경로 변경 금지, pleos-platform.md 12장). */
-    fun addRestStop(lat: Double, lon: Double, name: String) {
-        if (!ready.value) return
+    fun addRestStop(lat: Double, lon: Double, name: String, providerPoiId: String) {
+        if (!ready.value || providerPoiId.isBlank()) return
         navi.addWaypoint(RequestWaypointInfo(latitude = lat, longitude = lon, poiName = name,
-            waypointIndex = WaypointIndex.FIRST, poiId = "", address = "", poiSubId = "0"))
+            waypointIndex = WaypointIndex.FIRST, poiId = providerPoiId, address = "", poiSubId = "0"))
     }
 
     fun stop() { navi.removeListener(listener); navi.release(); ready.value = false }
 }
 ```
-- [문서에 없음] `poiId`를 모를 때 빈 문자열을 넣어도 되는지는 문서에 없다. 시험 후 고친다(9장). 경유지 슬롯이 이미 2개면 `getWaypointInfo()`로 확인하고 사용자에게 바꿀지 묻는다.
+- 이 스케치는 연결·요청의 축약 예다. 운영 구현은 `NavigationRepository`의 접근 근거·기존 슬롯 보존·명시적 확인·결과 재조회를 함께 사용하며 두 슬롯이 차 있으면 추가를 거부한다. 빈 ID는 현재 Pleos 어댑터에서 전송 전에 차단한다. POI ID가 있어도 좌표·접근성이 검증되는 것은 아니다.
 
 ## 2. FusedLocation [문서] — F-*
 
@@ -370,7 +375,7 @@ interface ResultListener {
 
 ## 8. 기획에 영향 주는 사실 정리
 
-- 경유지 최대 2개, 휴게소 POI 타입 없음 → 정차 장소 추천 같은 기능은 우리 데이터(서버·앱 DB)로 좌표를 정하고 NaviHelper로 경유지만 넣는다.
+- 경유지 최대 2개, 확인한 휴게소 POI 타입 없음 → 공개 시설 목록 외에 현재 여정의 방향·진입 좌표·시간·거리와 호환되는 내비 POI ID를 검증할 공급자가 필요하다. 목록 좌표만으로 추천·등록하지 않는다.
 - 내비 미탑재 차량에서는 NaviHelper가 동작하지 않고, 탑재 여부를 알 방법도 없다 → 내비 연동은 실패해도 앱 핵심이 돌아가게.
 - TTS·STT·FusedLocation은 준비 중 → 시연은 녹음 음원 + 버튼 입력 + NaviHelper 현재 위치로 대체 가능하게 설계.
 - TTS·STT `ON_DEVICE` 모드는 자격 증명 없이 동작한다고 문서에 있다 → 승인(권한)만 열리면 시크릿 관리 없이 쓸 수 있다.
@@ -378,7 +383,7 @@ interface ResultListener {
 ## 9. 확인 못 한 것·시험할 것
 
 - 모든 지정 페이지(N 10, F 6, T 9, S 10, V 6)는 2026-10-28에 정상으로 읽었다. 자동 생성 API 레퍼런스 하위 페이지는 읽지 않고 AAR로 대신 확인했다.
-- NaviHelper: 에뮬레이터에서 `requestRoute`·`addWaypoint`·`onWayPointArrived`가 실제로 오는지, `poiId` 빈 값 허용 여부, `remainDistance`·`remainTime`·`eta` 단위(m·초로 추정, 문서에 없음), 콜백 스레드.
+- NaviHelper: 경로 요청·ETA·재연결과 Binder 콜백 스레드는 2026-11-12~13에 확인했다. 경유지는 변경 이벤트·ID 반영은 확인했지만 0,0 응답 때문에 성공을 확정하지 못했다. 빈 ID 지원·실제 도착 이벤트·현재 경로 시설 접근성은 남았다. `DestinationInfo.remainDistance`·`remainTime`은 공식 API 레퍼런스에서 미터·초 확인(1.3절, 2026-11-12); `TripInfo.eta`는 별도 확인 필요.
 - TTS·STT: 에뮬레이터에 CAAS(`ai.pleos.playground.caas` 4.1.29+)가 있는지(2026-10-25에는 이름으로 못 찾음), `TTS_SERVICE`·`STT_SERVICE`가 승인 대상인지, `ON_DEVICE` 엔진이 에뮬레이터에 있는지, 서비스가 오디오 포커스·선행 묵음을 처리하는지.
 - Android 표준 TTS 엔진이 Pleos 이미지에 있는지.
 - FusedLocation: 승인 시점, proximity alert 사용 조건.

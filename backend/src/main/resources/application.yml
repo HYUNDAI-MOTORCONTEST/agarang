@@ -7,3 +7,6 @@ server:
 
 app:
   version: 0.0.1
+  facilities:
+    catalog: ${HMG_FACILITY_CATALOG:classpath:facilities/public-catalog.json}
+    route-access: ${HMG_ROUTE_ACCESS_CATALOG:classpath:facilities/route-access.json}

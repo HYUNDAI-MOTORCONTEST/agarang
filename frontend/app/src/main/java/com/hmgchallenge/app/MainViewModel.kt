@@ -7,14 +7,45 @@ import androidx.lifecycle.viewModelScope
 import com.hmgchallenge.app.driving.UxRestrictionsMonitor
 import com.hmgchallenge.app.driving.UxRestrictionsState
 import com.hmgchallenge.shared.HealthResponse
+import com.hmgchallenge.app.care.AtomicCareRecordStore
+import com.hmgchallenge.shared.care.CareEventType
+import com.hmgchallenge.shared.care.CareRepository
+import com.hmgchallenge.app.navigation.PleosNavigationClient
+import com.hmgchallenge.app.facility.AssetFacilityCatalogClient
+import com.hmgchallenge.app.facility.AssetRouteAccessCatalogClient
+import com.hmgchallenge.app.facility.AtomicFacilityCatalogStore
+import com.hmgchallenge.app.facility.AtomicRouteAccessCatalogStore
+import com.hmgchallenge.app.facility.HttpFacilityCatalogClient
+import com.hmgchallenge.app.facility.HttpRouteAccessCatalogClient
+import com.hmgchallenge.app.facility.FacilityUiState
+import com.hmgchallenge.app.departure.DepartureController
+import com.hmgchallenge.shared.data.DataStatus
+import com.hmgchallenge.shared.facility.DemoStopScenario
+import com.hmgchallenge.shared.facility.FacilityRepository
+import com.hmgchallenge.shared.facility.LastRestAreaAlert
+import com.hmgchallenge.shared.facility.LastRestAreaAlerts
+import com.hmgchallenge.shared.facility.RouteAccessRepository
+import com.hmgchallenge.shared.facility.FacilityState
+import com.hmgchallenge.shared.facility.StopPlanner
+import com.hmgchallenge.shared.facility.StopCandidate
+import com.hmgchallenge.shared.journey.NavigationRepository
+import com.hmgchallenge.shared.journey.NavigationSource
+import java.io.File
 import ai.pleos.playground.vehicle.Vehicle
 import ai.pleos.playground.vehicle.listener.EvBatteryStateOfChargeListener
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -44,6 +75,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val uxMonitor = UxRestrictionsMonitor(application)
     val uxRestrictions: StateFlow<UxRestrictionsState> = uxMonitor.state
 
+    private val careRepository = CareRepository(AtomicCareRecordStore(File(application.filesDir, "care-record.json")))
+    val careState = careRepository.state
+
+    val navigation: NavigationSource = NavigationRepository({ PleosNavigationClient(application) })
+    private val forecastTicks = MutableStateFlow(System.currentTimeMillis())
+    private var navigationJob: Job? = null
+
+    // release(제출) 빌드는 백엔드 없이 APK에 넣은 공개 시설·경로 접근성 데이터를 쓴다(BUNDLED_FACILITY_DATA).
+    private val facilityRepository = FacilityRepository(
+        if (BuildConfig.BUNDLED_FACILITY_DATA) AssetFacilityCatalogClient(application.assets::open)
+        else HttpFacilityCatalogClient(BuildConfig.BACKEND_BASE_URL),
+        AtomicFacilityCatalogStore(File(application.filesDir, "facility-catalog.json")))
+    private val routeAccessRepository = RouteAccessRepository(
+        if (BuildConfig.BUNDLED_FACILITY_DATA) AssetRouteAccessCatalogClient(application.assets::open)
+        else HttpRouteAccessCatalogClient(BuildConfig.BACKEND_BASE_URL),
+        AtomicRouteAccessCatalogStore(File(application.filesDir, "route-access-catalog.json")),
+    )
+    private val facilityDemo = MutableStateFlow(false)
+    private val stopPlanner = StopPlanner()
+    private val lastRestAlerts = LastRestAreaAlerts()
+    private val mutableFacilityAlert = MutableStateFlow<LastRestAreaAlert?>(null)
+    val facilityAlert = mutableFacilityAlert.asStateFlow()
+    val facilities = combine(
+        facilityRepository.state,
+        routeAccessRepository.state,
+        navigation.snapshots,
+        forecastTicks,
+        facilityDemo,
+    ) { data, _, journey, _, demo ->
+        // A fresh SDK/HTTP update may arrive after the last timer tick. Evaluate at receipt time.
+        val now = System.currentTimeMillis()
+        if (demo) {
+            val scenario = DemoStopScenario.create(now)
+            FacilityUiState(FacilityState(scenario.facilities),
+                stopPlanner.plan(scenario.journey, scenario.facilities, scenario.evidence, now), true)
+        } else FacilityUiState(data, stopPlanner.plan(journey, data.snapshot, routeAccessRepository.evaluate(journey, now), now), false)
+    }.onEach { presentation ->
+        val current = mutableFacilityAlert.value
+        val result = presentation.plans
+        if (current != null && (current.journeyId != result.journeyId ||
+                current.candidate.facility.id != result.lastRestArea.candidate?.facility?.id)) mutableFacilityAlert.value = null
+        lastRestAlerts.poll(result)?.let { mutableFacilityAlert.value = it }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly,
+        FacilityUiState(facilityRepository.state.value,
+            stopPlanner.plan(
+                navigation.snapshots.value,
+                facilityRepository.state.value.snapshot,
+                routeAccessRepository.evaluate(navigation.snapshots.value),
+                System.currentTimeMillis(),
+            ), false))
+
+    val departure = DepartureController(
+        application.filesDir,
+        careRepository,
+        navigation.snapshots,
+        facilityRepository.state,
+        forecastTicks,
+        uxRestrictions,
+        viewModelScope,
+        routeAccessRepository.state,
+        routeAccessRepository::evaluate,
+    )
+    val forecast = departure.state.map { it.evaluation?.forecast }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     // Vehicle SDK 인스턴스는 화면(ViewModel) 수명 동안 유지하고 onCleared()에서 release 한다.
     private var vehicle: Vehicle? = null
 
@@ -58,8 +153,92 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         uxMonitor.start()
-        refreshHealth()
+        reloadCareRecords()
+        departure.load()
+        if (!BuildConfig.BUNDLED_FACILITY_DATA) refreshHealth()
         initVehicleAndReadBattery()
+    }
+
+    fun reloadCareRecords() {
+        viewModelScope.launch { careRepository.load() }
+    }
+
+    fun startNavigation() {
+        if (navigationJob?.isActive == true) return
+        navigation.start()
+        refreshFacilities()
+        forecastTicks.value = System.currentTimeMillis()
+        navigationJob = viewModelScope.launch {
+            var seconds = 0
+            while (isActive) {
+                delay(1_000)
+                navigation.tick()
+                seconds++
+                if (seconds % 30 == 0) {
+                    facilityRepository.tick()
+                    routeAccessRepository.tick()
+                    forecastTicks.value = System.currentTimeMillis()
+                    if (navigation.connection.value == DataStatus.READY) navigation.refresh()
+                }
+            }
+        }
+    }
+
+    fun stopNavigation() {
+        navigationJob?.cancel()
+        navigationJob = null
+        navigation.stop()
+    }
+
+    fun refreshNavigation() = navigation.refresh()
+    fun prepareStopNavigation(candidate: StopCandidate) = navigation.prepareStop(candidate)
+    fun confirmStopNavigation(confirmationId: String) = navigation.confirmStop(confirmationId)
+    fun cancelStopNavigation() = navigation.cancelStop()
+
+    fun refreshFacilities() {
+        viewModelScope.launch { facilityRepository.refresh() }
+        viewModelScope.launch { routeAccessRepository.refresh() }
+    }
+
+    fun toggleFacilityDemo() {
+        val ux = uxRestrictions.value
+        if (ux.requiresDistractionOptimization || ux.noSetup) return
+        mutableFacilityAlert.value = null
+        facilityDemo.value = !facilityDemo.value
+        forecastTicks.value = System.currentTimeMillis()
+    }
+
+    fun dismissFacilityAlert() { mutableFacilityAlert.value = null }
+
+    fun recordCare(type: CareEventType) {
+        viewModelScope.launch { careRepository.record(type) }
+    }
+
+    fun undoCare() {
+        viewModelScope.launch { careRepository.undoLatest() }
+    }
+
+    fun saveCareProfile(monthAge: Int, preferredAmountMl: Int?) {
+        viewModelScope.launch {
+            // Check again when the action executes: driving may begin while the form is open.
+            val ux = uxRestrictions.value
+            if (ux.requiresDistractionOptimization || ux.noSetup) {
+                careRepository.requireParking()
+                return@launch
+            }
+            careRepository.saveProfile(monthAge, preferredAmountMl)
+        }
+    }
+
+    fun editCareEvent(id: String, atEpochMillis: Long, amountMl: Int?) {
+        viewModelScope.launch {
+            val ux = uxRestrictions.value
+            if (ux.requiresDistractionOptimization || ux.noSetup) {
+                careRepository.requireParking()
+                return@launch
+            }
+            careRepository.editEvent(id, atEpochMillis, amountMl)
+        }
     }
 
     fun refreshHealth() {
@@ -159,6 +338,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        stopNavigation()
         uxMonitor.stop()
         try {
             vehicle?.getEvBattery()?.unregisterEvBatteryStateOfCharge(batteryListener)

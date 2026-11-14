@@ -1,7 +1,7 @@
 # AGENTS.md
 
 현대자동차그룹 차량용 앱 개발 공모전 출품작. Pleos Connect(Android Automotive OS 기반 인포테인먼트)용 Kotlin 모노레포다.
-앱 이름·팀명은 확정 전이다(README 1항 참고).
+팀명·앱 이름은 **아가랑**이다(README 1항).
 
 > 이 파일이 에이전트 지침의 **단일 원본**이다. Codex는 이 파일을 바로 읽고, Claude Code는 `CLAUDE.md`의 `@AGENTS.md` import로 읽는다.
 > 공통 규칙은 여기에만 쓰고, 도구 전용 내용만 `CLAUDE.md`(Claude Code)·`.codex/config.toml`(Codex)에 둔다.
@@ -21,7 +21,7 @@
 | `frontend/sandbox/` | `:frontend:sandbox` | 로컬 테스트용 샌드박스 앱 "아가랑 미니"(`com.hmgchallenge.sandbox`), 제출 대상 아님. 실행 `scripts/run-app.sh sandbox` |
 | `backend/` | `:backend` | Spring Boot(Kotlin) API 서버, 포트 8081 |
 | `shared/` | `:shared` | 앱·서버 공용 DTO(순수 Kotlin JVM, kotlinx.serialization) |
-| `apk/` | - | 제출용 release APK(`apk/팀명_앱이름_release.apk`) |
+| `apk/` | - | 제출용 release APK(`apk/아가랑_아가랑_release.apk`) |
 | `docs/guides/` | - | 차량 UI·개발 가이드 요약(직접 쓴 요약 + 원문 URL) |
 | `docs/contest/` | - | 공모전 규칙·일정·제출물·심사 기준·제출 전 체크리스트(`rules.md`) |
 | `scripts/` | - | 개발환경 세팅·에뮬레이터·Virtual Console·캡처·앱 실행 스크립트(bash) |
@@ -75,8 +75,8 @@ adb logcat -s HmgApp                 # 앱 로그
 - **Kotlin만 사용**한다(앱·서버·공용 모두). Java 소스를 추가하지 않는다.
 - **minSdk 28 이상**(차량 보안 요건: 서명 키 로테이션·리니지).
 - **가로·세로 레이아웃 모두 지원**: `screenOrientation`을 고정하지 않는다. Pleos는 portrait(window 1개)와 landscape(window 2개)를 오가며, 사용자가 window 크기를 바꿀 수 있다.
-- **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 심사를 통과하지 못한다. 현재 선언: `CAR_ENERGY`.
-- **제출 APK**: 실행 가능한 release 빌드를 `apk/팀명_앱이름_release.apk`로 둔다(용량 초과 시 GitHub Releases).
+- **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 심사를 통과하지 못한다. 현재 선언: `CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`(NaviHelper 별도 신청 불필요는 공식 문서 확인, 설치별 실제 권한은 호출 전 확인).
+- **제출 APK**: 실행 가능한 release 빌드를 `apk/아가랑_아가랑_release.apk`로 둔다(용량 초과 시 GitHub Releases).
 - **README 필수 4항목**: 앱 이름·한 줄 소개 / 실행 방법 / 테스트 환경·필요한 설정 / APK 위치 또는 Release 링크. 이 4개 섹션을 지우거나 순서를 바꾸지 않는다.
 - **익명성·보안**: 레포·APK·커밋 메시지·스크린샷에 실명, 연락처, 이메일, 소속, 계정 정보, API 키, 서명 키를 넣지 않는다. 키는 환경변수로만 다루고 `.env*`, `*.jks`, `keystore.properties`는 커밋하지 않는다.
 
@@ -118,6 +118,7 @@ adb logcat -s HmgApp                 # 앱 로그
 ## 코드 작업 규칙
 
 - 차량 UI(Compose 화면·컴포넌트)를 만들거나 고칠 때는 **`vehicle-ui` 스킬**의 절차를 따른다. 원본은 `.claude/skills/vehicle-ui/SKILL.md`이고, Codex는 같은 폴더를 가리키는 심볼릭 링크 `.agents/skills/vehicle-ui`로 읽는다. 스킬을 고칠 때는 원본만 고친다.
+- Google Drive 산출물·문서·영상·스크린샷을 조회·업로드·정리할 때는 **`agarang-drive` 스킬**(`.claude/skills/agarang-drive/SKILL.md`, Codex 링크 `.agents/skills/agarang-drive`)을 따른다. 드라이브 접근은 **`아가랑` 루트 폴더 하위만 허용**하며 외부 파일·폴더 조회/이동은 금지한다. 루트에 직접 파일을 올리지 말고 `01_`~`04_` 패키지 폴더에 배치한 뒤 `00_아가랑_프로젝트_한눈에보기`를 동기화하며, Drive ID·개인 이메일·링크는 Git 추적 파일에 넣지 않는다.
 - Vehicle SDK: `Vehicle(context).initialize()` → `getXxx()`로 도메인 객체 획득 → capability/get/set/callback. 결과는 비동기(`onComplete`/`onFailed`)다. 콜백이 끝나기 전에 `release()`하지 않는다. 예: `frontend/app/.../MainViewModel.kt`.
 - SDK가 없는 환경이나 권한 오류에서도 앱이 죽지 않게 `onFailed`와 예외를 처리하고, 실패 상태를 화면에 보여 준다.
 - 에뮬레이터에서 VIN은 "invalid"로 나온다(이미지 쪽 문제로 보임). 앱 로직이 VIN 값에 의존하지 않게 한다.
@@ -134,7 +135,7 @@ adb logcat -s HmgApp                 # 앱 로그
 | --- | --- | --- |
 | 지침 | `CLAUDE.md`(첫 줄 `@AGENTS.md` import + Claude 전용 메모) | `AGENTS.md`(이 파일) |
 | Context7 MCP | `.mcp.json` + `.claude/settings.json`의 `enabledMcpjsonServers: ["context7"]` | `.codex/config.toml`의 `[mcp_servers.context7]` |
-| 스킬 | `.claude/skills/vehicle-ui/`(원본) | `.agents/skills/vehicle-ui` → 원본 심볼릭 링크 |
+| 스킬 | `.claude/skills/`(`vehicle-ui`, `agarang-drive` 원본) | `.agents/skills/` → 원본 심볼릭 링크 |
 | 세션 시작 훅 | `.claude/settings.json` `SessionStart`(matcher `startup`) → `scripts/setup.sh` | `.codex/config.toml` `[[hooks.SessionStart]]`(matcher `startup`) → `scripts/setup.sh` |
 | 처음 1회 | 폴더 신뢰(workspace trust) 창에서 승인해야 프로젝트 설정·MCP 자동 승인이 적용됨 | 프로젝트를 신뢰(trusted)해야 `.codex/` 설정이 로드되고, `/hooks`에서 훅을 검토·신뢰해야 실행됨 |
 

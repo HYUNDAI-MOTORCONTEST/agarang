@@ -1,0 +1,165 @@
+{
+  "origin": "NAVI_SDK",
+  "status": "READY",
+  "value": {
+    "origin": "NAVI_SDK",
+    "fetchedAtEpochMillis": 1794448871179,
+    "corridors": [
+      {
+        "id": "gyeongbu-busan-cheonan",
+        "destinationLabel": "천안분기점",
+        "destinationLocation": {
+          "latitudeDegrees": 36.72,
+          "longitudeDegrees": 127.27
+        },
+        "destinationPoiId": "gyeongbu-cheonan-jc",
+        "destinationToleranceMeters": 250.0,
+        "totalDistanceMeters": 80000,
+        "totalDurationSeconds": 3600,
+        "coversRemainingRestAreas": true,
+        "approaches": [
+          {
+            "facilityId": "public-4ce7e3532f4f371c529563e3",
+            "access": "OPPOSITE_DIRECTION",
+            "remainingDistanceToDestinationMeters": 68000,
+            "remainingDurationToDestinationSeconds": 3060
+          },
+          {
+            "facilityId": "public-a9c9db4f76ef7bec2486d011",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 58000,
+            "remainingDurationToDestinationSeconds": 2610,
+            "navigationLocation": {
+              "latitudeDegrees": 37.23541,
+              "longitudeDegrees": 127.10421
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-6b47faeb0db871b24f624671",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 49000,
+            "remainingDurationToDestinationSeconds": 2200,
+            "navigationLocation": {
+              "latitudeDegrees": 37.15691,
+              "longitudeDegrees": 127.08702
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-45ef5cddee2d2fbea16bf6de",
+            "access": "OPPOSITE_DIRECTION",
+            "remainingDistanceToDestinationMeters": 48800,
+            "remainingDurationToDestinationSeconds": 2190
+          },
+          {
+            "facilityId": "public-0cae9d7b0e3a1032f39a5270",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 42000,
+            "remainingDurationToDestinationSeconds": 1890,
+            "navigationLocation": {
+              "latitudeDegrees": 37.09635,
+              "longitudeDegrees": 127.12058
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-67bcbddc62c7c0b9a99d498f",
+            "access": "OPPOSITE_DIRECTION",
+            "remainingDistanceToDestinationMeters": 39500,
+            "remainingDurationToDestinationSeconds": 1780
+          },
+          {
+            "facilityId": "public-c7b5fbf04b0ab94ff0ae3ca1",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 32000,
+            "remainingDurationToDestinationSeconds": 1440,
+            "navigationLocation": {
+              "latitudeDegrees": 37.01362,
+              "longitudeDegrees": 127.14455
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-e3b13fd2544560bf9f2eeb32",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 15000,
+            "remainingDurationToDestinationSeconds": 675,
+            "navigationLocation": {
+              "latitudeDegrees": 36.85582,
+              "longitudeDegrees": 127.18071
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-7f6ef4dc555d4a50dba1e0c2",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 2500,
+            "remainingDurationToDestinationSeconds": 120,
+            "navigationLocation": {
+              "latitudeDegrees": 36.73041,
+              "longitudeDegrees": 127.26365
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          }
+        ]
+      },
+      {
+        "id": "pleos-sdk-guide-corridor",
+        "destinationLabel": "42dot",
+        "destinationLocation": {
+          "latitudeDegrees": 37.41289678,
+          "longitudeDegrees": 127.09383464
+        },
+        "destinationPoiId": "36khp37hh8gqcm5nqhe5",
+        "destinationToleranceMeters": 250.0,
+        "totalDistanceMeters": 5000,
+        "totalDurationSeconds": 600,
+        "coversRemainingRestAreas": true,
+        "approaches": [
+          {
+            "facilityId": "public-4ce7e3532f4f371c529563e3",
+            "access": "OPPOSITE_DIRECTION",
+            "remainingDistanceToDestinationMeters": 40,
+            "remainingDurationToDestinationSeconds": 45
+          },
+          {
+            "facilityId": "public-4c2054789adcf6c55e45373e",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 35,
+            "remainingDurationToDestinationSeconds": 40,
+            "navigationLocation": {
+              "latitudeDegrees": 37.41275833,
+              "longitudeDegrees": 127.09481944
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-1416d8b56c2be67278db9e9f",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 20,
+            "remainingDurationToDestinationSeconds": 25,
+            "navigationLocation": {
+              "latitudeDegrees": 37.41275833,
+              "longitudeDegrees": 127.09481944
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          },
+          {
+            "facilityId": "public-a9c9db4f76ef7bec2486d011",
+            "access": "CONFIRMED_ON_ROUTE",
+            "remainingDistanceToDestinationMeters": 10,
+            "remainingDurationToDestinationSeconds": 12,
+            "navigationLocation": {
+              "latitudeDegrees": 37.41275833,
+              "longitudeDegrees": 127.09481944
+            },
+            "navigationPoiId": "36khp2hdj2cfcm5nqhe3"
+          }
+        ]
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "observedAtEpochMillis": 1794448871179
+}

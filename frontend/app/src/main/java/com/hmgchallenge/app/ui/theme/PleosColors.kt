@@ -252,6 +252,30 @@ class PleosColors private constructor(val isDark: Boolean) {
 }
 
 /**
+ * Semantic accent tones mapped to Pleos status/brand tokens for decorative leading bars or borders.
+ * Never use these as small-text foreground colors unless contrast exceeds 4.5:1 against the backing surface.
+ */
+enum class PleosAccentTone {
+    NEUTRAL,
+    POSITIVE,
+    ACTIVE,
+    WARNING,
+    DANGER,
+}
+
+/**
+ * Resolved visual styling for interactive Pleos controls across Light/Dark themes and nested card surfaces.
+ */
+@Immutable
+data class PleosButtonStyle(
+    val container: Color,
+    val content: Color,
+    val secondaryContent: Color,
+    val border: Color? = null,
+    val indicator: Color? = null,
+)
+
+/**
  * 화면에서 쓰는 역할 → 토큰 매핑. 토큰은 문서 System Color를 쓰고, 문서에 해당 역할이 없는 곳만 팀 판단(표에 [팀]).
  * 대비는 WCAG 2.x 상대 휘도 공식으로 계산했다(Pleos 기준 4.5:1 이상, docs/guides/pleos-ui.md 5장).
  * 알파 토큰은 아래 배경 위에 합성한 색으로 계산했다.
@@ -263,6 +287,7 @@ class PleosColors private constructor(val isDark: Boolean) {
  * | 보조 글자 / 카드 | text_dark_secondary / surface_high | 10.27 | 9.52 |
  * | 버튼 라벨 / 버튼(enabled) [팀: 라벨 basic_00] | basic_00 / button_filled_enabled | 9.41 | 14.11 |
  * | 버튼 라벨 / 버튼(pressed) | basic_00 / button_filled_pressed | 12.80 | 11.12 |
+ * | 보조 버튼 라벨 / 보조 버튼(카드 위) [팀] | text_dark_primary / basic_00(주간)·surface_accent(야간) | 19.16 | 9.41 |
  * | 버튼 라벨 / 버튼(disabled, 카드 위) [팀: 라벨] | text_dark_tertiary / button_filled_disabled | 4.98 | 5.60 |
  * | 주행 배너 글자 / 배너 [팀: 반전 배너] | basic_00 / basic_700 | 12.80 | 15.89 |
  * | 오류 표시 위 글자(onError) [팀] | basic_static_dark_100 / informative_negative | 5.17 | 5.54 |
@@ -271,4 +296,76 @@ class PleosColors private constructor(val isDark: Boolean) {
  * Informative 색은 글자색으로 쓰지 않는다: 카드 위에서 active 2.03/7.26, positive 4.25/3.44, negative 3.07/3.85(주간/야간)로
  * 4.5:1에 못 미치는 경우가 있다. 오류 카드의 왼쪽 막대처럼 글자가 같은 뜻을 이미 전하는 보조 표시에만 쓴다.
  */
-object PleosRoles
+object PleosRoles {
+    val PleosColors.isDarkPalette: Boolean
+        get() = isDark
+
+    val PleosColors.cardContainer: Color
+        get() = surface_high
+
+    val PleosColors.cardBorder: Color
+        get() = climate_button_border_disabled
+
+    val PleosColors.heroContainer: Color
+        get() = surface_basic
+
+    val PleosColors.heroBorder: Color
+        get() = climate_button_border_enabled
+
+    val PleosColors.nestedContainer: Color
+        get() = surface_basic
+
+    val PleosColors.nestedOnHeroContainer: Color
+        get() = surface_high
+
+    fun PleosColors.accentColor(tone: PleosAccentTone): Color = when (tone) {
+        PleosAccentTone.NEUTRAL -> basic_500
+        PleosAccentTone.POSITIVE -> informative_positive
+        PleosAccentTone.ACTIVE -> informative_active
+        PleosAccentTone.WARNING -> regulation_orange
+        PleosAccentTone.DANGER -> informative_negative
+    }
+
+    /**
+     * Resolves distinct container, text, border, and selection-indicator tokens for buttons both on
+     * primary screen backgrounds and nested inside [cardContainer] cards.
+     */
+    fun PleosColors.resolveButtonStyle(
+        enabled: Boolean,
+        primary: Boolean,
+        selected: Boolean?,
+        pressed: Boolean,
+    ): PleosButtonStyle = when {
+        !enabled -> PleosButtonStyle(
+            container = button_filled_disabled,
+            content = text_dark_tertiary,
+            secondaryContent = text_dark_tertiary,
+            border = climate_button_border_disabled,
+            indicator = null,
+        )
+
+        primary || selected == true -> PleosButtonStyle(
+            container = if (pressed) button_filled_pressed else button_filled_enabled,
+            content = basic_00,
+            secondaryContent = basic_100,
+            border = if (selected == true) informative_positive else null,
+            indicator = if (selected == true) informative_active else null,
+        )
+
+        !isDark -> PleosButtonStyle(
+            container = if (pressed) surface_accent else button_switch_enabled,
+            content = text_dark_primary,
+            secondaryContent = text_dark_secondary,
+            border = climate_button_border_enabled,
+            indicator = null,
+        )
+
+        else -> PleosButtonStyle(
+            container = if (pressed) basic_300 else surface_accent,
+            content = text_dark_primary,
+            secondaryContent = text_dark_secondary,
+            border = climate_button_border_enabled,
+            indicator = null,
+        )
+    }
+}
