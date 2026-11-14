@@ -127,7 +127,7 @@ Compose 적용: 상태는 ViewModel + `SavedStateHandle`/저장소에 두고, �
 - 제어(set)는 `CONTROL_CAR_*` 계열(예: `CONTROL_CAR_DOORS`).
 - 권한은 Pleos App Market과 사전 협의·승인된 범위에서만 쓴다. 승인되지 않은 권한 선언이나 API 호출은 심사 탈락 사유다(SDK).
 - 권한이 없으면 `onFailed`로 예외가 오고, `VehicleException`이면 `ERROR_SECURITY_PERMISSION`일 수 있다.
-- Playground 프로젝트 기준 사용 가능: Vehicle State(조회), NaviHelper. 준비 중: Vehicle Control, FusedLocation, TextToSpeech, SpeechToText(PROJ). 제어 API 사용은 현재 막혀 있다고 보고 설계한다.
+- Playground 프로젝트 기준 사용 가능: Vehicle State(조회), NaviHelper. 준비 중: Vehicle Control, FusedLocation, TextToSpeech, SpeechToText(PROJ). 제어 API 사용은 현재 막혀 있다고 보고 설계한다. 이 표기는 App Market 배포 기준이고, 공모전 개발 단계에서는 SDK 5종을 매니페스트 선언만으로 쓸 수 있다(`docs/contest/rules.md` 1장).
 - 표는 도메인별 "대표" 권한이다. 세부 API마다 요구 권한이 다를 수 있으니 호출 전에 API 레퍼런스의 `@RequiresPermission`(PleosPermission 상수)을 확인한다(PERM).
 - [문서에 없음] Steeringwheel 도메인은 대표 권한 표에 없다. 쓰기 전에 해당 API의 `@RequiresPermission`으로 확인한다. [팀 확인] Vehicle 2.3.2 AAR에서 `getCurrentSteeringWheelAngle`·`registerSteeringWheelAngle`은 `CAR_DRIVE`다(2026-10-25 javap).
 - 오류 코드(`VehicleException.errorCode`)와 capability 모델은 `pleos-sdk.md` 5장.

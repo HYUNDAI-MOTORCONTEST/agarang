@@ -385,4 +385,22 @@
     <string name="ux_response_uncertainty">기록만으로 울음의 원인을 단정할 수 없어요.</string>
     <string name="ux_response_evidence_summary">수유·수면·착석 기록을 함께 확인할 수 있어요.</string>
     <string name="ux_stop_time">%1$s · 약 %2$d분</string>
+    <!-- Pleos SDK 연결 상태 -->
+    <string name="sdk_title">Pleos SDK 연결</string>
+    <string name="sdk_summary">%1$d / %2$d 연결됨</string>
+    <string name="sdk_checking">확인 중</string>
+    <string name="sdk_ready">연결됨</string>
+    <string name="sdk_initialized">초기화 호출됨 · 연결 미확인</string>
+
+    <!-- 공용 컴포넌트(ui/components) -->
+    <string name="action_back">뒤로</string>
+    <string name="action_decrease">줄이기</string>
+    <string name="action_increase">늘리기</string>
+    <string name="state_on">켜짐</string>
+    <string name="state_off">꺼짐</string>
+    <string name="parked_only">주차 후 이용할 수 있어요</string>
+    <!-- 아기 상태 예보 단계 -->
+    <string name="forecast_relaxed">여유</string>
+    <string name="forecast_caution">주의</string>
+    <string name="forecast_imminent">임박</string>
 </resources>

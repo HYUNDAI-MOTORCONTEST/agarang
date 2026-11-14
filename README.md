@@ -179,6 +179,7 @@ adb logcat -s HmgApp
 | `CLAUDE.md` | `@AGENTS.md` import + Claude Code 전용 메모 |
 | `docs/guides/` | Pleos·Google 차량 가이드 요약(원문 URL 포함, 원문이 최종 기준) |
 | `docs/contest/rules.md` | 공모전 규칙·일정·제출물·심사 기준·제출 전 체크리스트 |
+| `docs/architecture.md` | 앱 구조·동작 흐름 설명서(2차 PT 기술 Q&A 대비) |
 | `.mcp.json` | Claude Code용 Context7 문서 MCP(원격 HTTP, `https://mcp.context7.com/mcp`) |
 | `.claude/settings.json` | Claude Code 공용 설정: SessionStart 훅(`scripts/setup.sh`), `context7` MCP 자동 승인 |
 | `.codex/config.toml` | Codex 프로젝트 설정: Context7 MCP, SessionStart 훅(`scripts/setup.sh`) |

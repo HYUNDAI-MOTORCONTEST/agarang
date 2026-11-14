@@ -10,7 +10,8 @@ description: Pleos Connect 차량 앱의 Jetpack Compose UI(화면, 컴포넌트
 2. 컴포넌트(팝업, 토스트, 스위치, 필드, 세그먼트 메뉴 등)·모션·그림자가 걸리면 `docs/guides/pleos-components.md`에서 해당 컴포넌트 절과 6장 우선순위 표.
 3. 운전 중 동작이 걸리면 `docs/guides/pleos-dev.md` 2장(주행 규제)·3장(주의 분산).
 4. Back 처리·로터리(CCP)·키보드(IME)·소리가 걸리면 `docs/guides/pleos-platform.md`(0장 핵심 규칙표).
-5. 수정할 화면 코드(`frontend/app/src/main/java/com/hmgchallenge/app/`)와 `AndroidManifest.xml`.
+5. 공용 컴포넌트 `frontend/app/src/main/java/com/hmgchallenge/app/ui/components/`와 디자인 토큰 `ui/theme/PleosTokens.kt`(`PleosTheme.dimens/shapes`, `PleosMotion`, `PleosElevation`)·적용 도우미 `ui/theme/PleosEffects.kt`(`pleosShadow`, `pleosTween`). 같은 역할의 컴포넌트가 있으면 새로 만들지 않고 쓴다.
+6. 수정할 화면 코드(`frontend/app/src/main/java/com/hmgchallenge/app/`)와 `AndroidManifest.xml`.
 
 ## 2. 요약에 없을 때만 원문 조회
 - Pleos SDK·개발 가이드: Context7 `mcp__context7__query-docs`, `libraryId="/websites/document_pleos_ai_en"`(영어, 부분 색인).
@@ -40,7 +41,7 @@ Pleos UI 디자인 가이드 → Pleos 기획·개발 가이드·SDK 레퍼런�
 - [ ] **Back**: 최상위 화면 Back은 `moveTaskToBack(true)`(`finish()` 금지, `pleos-platform.md`).
 - [ ] **시스템 UI와 겹침**: Status bar·GNB·Window bar 같은 시스템 영역을 앱이 그리거나 덮지 않는다.
 - [ ] **실패 상태**: Vehicle SDK `onFailed`, 권한 없음, VIN "invalid"(에뮬레이터)에서도 화면이 깨지지 않고 상태를 보여 준다.
-- [ ] **권한**: 새 차량 도메인을 쓰면 승인된 `pleos.car.permission.*`만 추가(`pleos-dev.md` 5장).
+- [ ] **권한**: 새 차량 도메인을 쓰면 실제로 쓰는 `pleos.car.permission.*`만 main 매니페스트에 추가(`pleos-dev.md` 5장, 공모전 허용 범위는 `docs/contest/rules.md` 1장). 개발 확인용 권한은 debug 매니페스트에 둔다.
 
 ## 5. 검증 (실제로 실행)
 1. 빌드: `./gradlew :frontend:app:assembleDebug`

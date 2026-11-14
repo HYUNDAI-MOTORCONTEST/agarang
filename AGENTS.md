@@ -24,6 +24,7 @@
 | `apk/` | - | 제출용 release APK(`apk/아가랑_아가랑_release.apk`) |
 | `docs/guides/` | - | 차량 UI·개발 가이드 요약(직접 쓴 요약 + 원문 URL) |
 | `docs/contest/` | - | 공모전 규칙·일정·제출물·심사 기준·제출 전 체크리스트(`rules.md`) |
+| `docs/architecture.md` | - | 구조 설명서(2차 PT 기술 Q&A 대비). 앱 구조·흐름을 바꾸면 같이 고친다 |
 | `scripts/` | - | 개발환경 세팅·에뮬레이터·Virtual Console·캡처·앱 실행 스크립트(bash) |
 | `licenses/` | - | 서드파티 라이선스 전문(Asta Sans OFL). 번들 글꼴·에셋을 추가하면 여기에 둔다 |
 | `gradle/libs.versions.toml` | - | 버전 카탈로그. 의존성 버전은 여기서만 바꾼다 |
@@ -75,7 +76,7 @@ adb logcat -s HmgApp                 # 앱 로그
 - **Kotlin만 사용**한다(앱·서버·공용 모두). Java 소스를 추가하지 않는다.
 - **minSdk 28 이상**(차량 보안 요건: 서명 키 로테이션·리니지).
 - **가로·세로 레이아웃 모두 지원**: `screenOrientation`을 고정하지 않는다. Pleos는 portrait(window 1개)와 landscape(window 2개)를 오가며, 사용자가 window 크기를 바꿀 수 있다.
-- **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 심사를 통과하지 못한다. 현재 선언: `CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`(NaviHelper 별도 신청 불필요는 공식 문서 확인, 설치별 실제 권한은 호출 전 확인).
+- **승인된 차량 권한만 선언**: `pleos.car.permission.*`은 쓰는 도메인 것만 선언한다. 승인되지 않은 권한을 선언하거나 해당 API를 부르면 App Market 배포 심사를 통과하지 못한다(공모전 개발 단계는 선언만으로 사용 가능, `docs/contest/rules.md` 1장). 현재 선언: `CAR_ENERGY`, `NAVI_ROUTE`, `NAVI_ROUTE_SEARCH`(NaviHelper 별도 신청 불필요는 공식 문서 확인, 설치별 실제 권한은 호출 전 확인). FusedLocation·TTS·STT 권한과 SDK 연결 확인 코드(`src/debug/.../sdk/PleosSdkCheck.kt`)는 debug 빌드에만 있고, release에는 빈 구현만 들어간다.
 - **제출 APK**: 실행 가능한 release 빌드를 `apk/아가랑_아가랑_release.apk`로 둔다(용량 초과 시 GitHub Releases).
 - **README 필수 4항목**: 앱 이름·한 줄 소개 / 실행 방법 / 테스트 환경·필요한 설정 / APK 위치 또는 Release 링크. 이 4개 섹션을 지우거나 순서를 바꾸지 않는다.
 - **익명성·보안**: 레포·APK·커밋 메시지·스크린샷에 실명, 연락처, 이메일, 소속, 계정 정보, API 키, 서명 키를 넣지 않는다. 키는 환경변수로만 다루고 `.env*`, `*.jks`, `keystore.properties`는 커밋하지 않는다.
@@ -125,6 +126,7 @@ adb logcat -s HmgApp                 # 앱 로그
 - 운전 중 제한: `CarUxRestrictions`를 구독해 동영상·애니메이션·자동 스크롤·키보드 입력·설정 화면을 줄이거나 막는다(`docs/guides/pleos-dev.md`). 구독은 `driving/UxRestrictions.kt`, 화면은 `LocalUxRestrictions.current`로 읽는다.
 - 꼭 지킬 플랫폼 규칙(`docs/guides/pleos-platform.md` 0장): 최상위 화면 Back은 `finish()` 대신 `moveTaskToBack(true)`, CCP(로터리) 미지원이면 매니페스트에 선언하고 터치만으로 조작이 끝나야 함, 성능 한도(주행 중 CPU 5% 미만·정차 중 25% 이하·RAM 400MB 이하), 소리를 내면 오디오 포커스 요청·변경 처리 필수.
 - Pleos SDK(NaviHelper·FusedLocation·TTS·STT)를 처음 쓸 때는 `docs/guides/pleos-sdk.md`의 상태·권한·초기화·해제 규칙을 먼저 읽는다. TTS·STT 클라이언트 ID·시크릿은 `local.properties`나 환경변수로만 다룬다.
+- 공용 컴포넌트: 화면은 `ui/components/`(버튼·카드·상단 바·탭·체크·스위치·토글·Stepper·토스트·팝업·주행 중 한 줄 안내·예보 배지·타임라인·2단 배치·주차 전용 영역)를 먼저 쓴다. 새로 필요하면 여기에 추가한다. 견본은 debug 빌드의 `adb shell am start -n com.hmgchallenge.app/.ComponentGalleryActivity`.
 - 테마: 색은 `ui/theme/PleosColors.kt`(Pleos 토큰 주간/야간), 글자는 `ui/theme/Type.kt`(Asta Sans + Pleos 위계). 화면 코드에 색·`fontSize`를 하드코딩하지 않는다.
 - 변경 후 최소 검증: `./gradlew :frontend:app:assembleDebug`(앱), `./gradlew :backend:build`(서버), `./gradlew :shared:build`(공용).
 - git commit·push는 사용자가 요청할 때만 한다.
