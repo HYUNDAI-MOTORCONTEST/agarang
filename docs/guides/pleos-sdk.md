@@ -4,6 +4,7 @@
 > 확인일: 2026-10-28 (한국어 페이지 기준). 시그니처는 Gradle 캐시의 AAR을 `javap`로 확인했다(NaviHelper 3.0.5 + navi-data 3.0.4, FusedLocation 1.1.3 + fused-location-data 0.0.3, TextToSpeech 3.3.1, SpeechToText 3.3.1).
 > 표기: **[문서]** 원문에 있는 내용, **[문서에 없음]** 다른 근거로 정한 팀 권장(근거를 같이 적음), **[AAR]** AAR 클래스·매니페스트에서 직접 확인한 것.
 > Vehicle SDK 기본 패턴·권한 표는 [pleos-dev.md](pleos-dev.md) 5장, 오디오 포커스·선행 묵음은 [pleos-platform.md](pleos-platform.md) 6·8장.
+> **2026-11-03 갱신:** 온라인 설명회(10.28)에서 "공모전에서는 SDK 5종을 권한 신청·승인 없이 매니페스트 선언만으로 쓸 수 있다"고 안내했다(`docs/contest/rules.md` 1장). 아래의 "준비 중(신청 불가)"은 Playground·App Market 배포 기준 표기이고, **공모전 앱에서는 TTS·STT·FusedLocation을 써도 된다.** 쓰기 시작할 때 해당 권한을 매니페스트에 선언하고(FusedLocation은 `tools:node="remove"` 줄도 지운다), 에뮬레이터에서 서비스가 실제로 응답하는지 먼저 확인한다.
 
 원문 약칭 (모두 `https://document.pleos.ai/docs/pleos-only` 아래)
 
@@ -34,7 +35,7 @@
 | Vehicle Control (set) | — | **준비 중(신청 불가)** | `CONTROL_CAR_*` | — |
 
 - 저장소: 모든 SDK가 `https://nexus-playground.pleos.ai/repository/maven-releases/`(문서). 이 레포는 루트 `settings.gradle.kts`에 이미 등록돼 있고, 버전은 `gradle/libs.versions.toml`에서만 바꾼다.
-- 준비 중 SDK 3종은 라이브러리만 의존성에 있고 호출하지 않는다(`frontend/app/build.gradle.kts` 주석). FusedLocation AAR이 자동으로 합치는 `FUSED_LOCATION_BINDING` 권한은 매니페스트에서 `tools:node="remove"`로 지웠다. 승인 전에는 `FUSED_LOCATION`·`TTS_SERVICE`·`STT_SERVICE`를 선언하지 않는다(`AGENTS.md` 필수 요건: 승인된 권한만).
+- [팀 확인 2026-11-03] `NAVI_ROUTE`·`NAVI_ROUTE_SEARCH`(main)와 `FUSED_LOCATION`·`TTS_SERVICE`·`STT_SERVICE`·`FUSED_LOCATION_BINDING`(debug 매니페스트에만, 제출 release에는 없음)을 선언한 debug 빌드로, 에뮬레이터 v2.1.0에서 NaviHelper·TTS·STT는 초기화 성공 콜백을 받았고, FusedLocation은 결과 콜백이 없는 `initialize()`를 예외 없이 호출한 데까지만 확인했다(`frontend/app/src/debug/.../sdk/PleosSdkCheck.kt`, TTS·STT는 `ON_DEVICE` 모드, `FUSED_LOCATION` 런타임 권한 요청은 하지 않음). 에뮬레이터 서비스 버전: Navi Service 3.0.4, FusedLocation Service 1.0.0, `ai.pleos.playground.caas` 4.2.10. 실제 발화·인식·위치 조회는 아직 시험하지 않았다.
 - [AAR] 4개 SDK 모두 AAR 매니페스트 minSdk 23(우리 minSdk 28에 문제 없음). 각 AAR은 대응 서비스 최소 버전을 meta-data로 적어 둔다: NaviHelper → Navi Service 2.0.1 이상, FusedLocation → FusedLocation Service 0.5.0 이상, TTS·STT → `ai.pleos.playground.caas` 4.1.29 이상.
 - [AAR] TTS·STT AAR은 `INTERNET` 권한을 자동으로 합친다(우리는 이미 선언). TTS·STT는 `ai.pleos.playground.security:universal-access:0.6.0`(앱 인증용, native 라이브러리 포함)에 의존한다.
 - 공통 패턴: 객체 생성 → `initialize`(가능하면 결과 콜백 있는 오버로드) → 리스너 등록 → 요청 → 콜백으로 결과 → 리스너 해제 → `release()`. `release()` 뒤에는 같은 객체를 다시 쓰지 않고 새로 만든다(N, F, T, S 문서 공통).
@@ -165,7 +166,7 @@ class NaviBridge(context: Context, private val scope: CoroutineScope) {
 
 ## 2. FusedLocation [문서] — F-*
 
-차량 위치(위도·경도·고도·방향·신뢰도·시각)를 Pleos FusedLocation Service에서 받는다. **현재 준비 중(신청 불가)이라 쓰지 않는다.** 아래는 승인 뒤를 위한 정리다.
+차량 위치(위도·경도·고도·방향·신뢰도·시각)를 Pleos FusedLocation Service에서 받는다. **Playground 표기는 준비 중(신청 불가)이다.** (App Market 배포 기준. 공모전은 선언만으로 사용 가능 — `docs/contest/rules.md` 1장. 제출 앱은 쓰지 않는다.) 아래는 쓰게 될 때를 위한 정리다.
 
 - 권한: `pleos.car.permission.FUSED_LOCATION`(보호 수준 dangerous → 런타임 요청 필요). 대상 API: `getLastKnownLocation`, `registerFusedLocationCallback`, `unregisterFusedLocationCallback`.
 - Android `ACCESS_*_LOCATION` 권한 동작과 포그라운드·백그라운드 위치 정책은 이 SDK가 보장하지 않는다. Google Fused Location 문서를 Pleos 동작으로 해석하지 않는다.
@@ -193,7 +194,7 @@ interface FusedLocationListener { fun onChanged(location: LocationData?); fun on
 - 오류: 모두 `onError(Exception)`. `null` 위치를 유효한 값으로 쓰지 않는다. [AAR] 예외는 `LocationException(errorCode)`이고 `ErrorCode` = `ERROR_INTERNAL_SERVICE`, `ERROR_SERVICE_CONNECTION_FAILURE`, `ERROR_DRIVING_RESTRICTED`, `ERROR_EMPTY_RESULT`, `ERROR_SECURITY_PERMISSION`, `ERROR_LOCATION_DISABLED`, `ERROR_UNDEFINED`(문서에는 코드 표가 없다).
 - RN v1.1.3: `onChanged` 인자가 nullable로 바뀌었고 `onError` 구현이 필수가 됐다(breaking).
 - Proximity alert(영역 진입·이탈)는 소개 페이지에 기능 이름만 있고 사용 가이드 페이지는 없다.
-- [팀 관찰] 에뮬레이터에 FusedLocation Service 1.0.0이 있다. 승인 전이라 호출하지 않았다.
+- [팀 관찰] 에뮬레이터에 FusedLocation Service 1.0.0이 있다. debug 빌드의 연결 확인(`PleosSdkCheck`)에서 `initialize()`만 호출했고 위치 조회는 하지 않았다.
 - [문서에 없음] 승인 전 대안: 현재 위치가 필요하면 NaviHelper `getCurrentLocationInfo()` → `onCurrentLocationInfo(CurrentLocationInfo)`(위경도·heading·주소, `NAVI_ROUTE`)를 쓴다.
 
 ## 3. TextToSpeech [문서] — T-*
@@ -377,7 +378,7 @@ interface ResultListener {
 
 - 경유지 최대 2개, 확인한 휴게소 POI 타입 없음 → 공개 시설 목록 외에 현재 여정의 방향·진입 좌표·시간·거리와 호환되는 내비 POI ID를 검증할 공급자가 필요하다. 목록 좌표만으로 추천·등록하지 않는다.
 - 내비 미탑재 차량에서는 NaviHelper가 동작하지 않고, 탑재 여부를 알 방법도 없다 → 내비 연동은 실패해도 앱 핵심이 돌아가게.
-- TTS·STT·FusedLocation은 준비 중 → 시연은 녹음 음원 + 버튼 입력 + NaviHelper 현재 위치로 대체 가능하게 설계.
+- TTS·STT·FusedLocation은 제출 앱(1차)에서 쓰지 않는다(Playground 표기 준비 중, 공모전은 선언만으로 사용 가능) → 시연은 녹음 음원 + 버튼 입력 + NaviHelper 현재 위치로 대체 가능하게 설계.
 - TTS·STT `ON_DEVICE` 모드는 자격 증명 없이 동작한다고 문서에 있다 → 승인(권한)만 열리면 시크릿 관리 없이 쓸 수 있다.
 
 ## 9. 확인 못 한 것·시험할 것

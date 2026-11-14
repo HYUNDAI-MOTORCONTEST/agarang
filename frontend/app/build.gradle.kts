@@ -110,10 +110,11 @@ dependencies {
 
     // Pleos Connect Vehicle SDK
     implementation(libs.pleos.vehicle)
-    // Pleos NaviHelper SDK (ETA·경유지·현재 위치·도착 이벤트). 기능을 쓸 때 NAVI_ROUTE(조회)·NAVI_ROUTE_SEARCH(경로·경유지 변경) 권한을 매니페스트에 선언한다.
+    // Pleos NaviHelper SDK (ETA·경유지·현재 위치·도착 이벤트). 권한 NAVI_ROUTE(조회)·NAVI_ROUTE_SEARCH(경로·경유지 변경)
     implementation(libs.pleos.navihelper)
-    // 아래 3종은 2026-10 기준 Pleos Playground에서 "준비 중(신청 불가)"이다. 라이브러리만 받아 두고, 승인 전에는 호출하지 않는다.
-    // FusedLocation(위치), TextToSpeech·SpeechToText(음성 — 사용 시 Playground 프로젝트의 클라이언트 ID·시크릿 필요, 레포에 넣지 말 것)
+    // 아래 3종은 Playground 표기상 "준비 중"이지만 공모전에서는 매니페스트 선언만으로 쓸 수 있다(docs/contest/rules.md 1장).
+    // 제출 앱(release)은 쓰지 않는다. 연결 확인(src/debug/.../sdk/PleosSdkCheck.kt)과 권한은 debug 빌드에만 있다.
+    // FusedLocation(위치), TextToSpeech·SpeechToText(음성 — ON_DEVICE 모드는 자격 증명 불필요. 서버 모드의 클라이언트 ID·시크릿은 레포에 넣지 말 것)
     implementation(libs.pleos.fusedlocation)
     implementation(libs.pleos.tts)
     implementation(libs.pleos.stt)

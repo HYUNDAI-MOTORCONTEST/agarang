@@ -83,8 +83,9 @@ scripts/run-app.sh -Phmg.backendUrl=http://10.0.2.2:9090
 | 항목 | 값 |
 | --- | --- |
 | 에뮬레이터 | Pleos Connect Emulator v2.1.0 (AVD `Pleos_Connect_v2.1.0`, API 34, Automotive, Cold boot, RAM 4GB) |
+| 화면 규격 | 2560×1440, density 160 (공식 기기 프로필 `Pleos_Connect_v2_0`). 앱은 window 2개(가로, 약 1682×1210dp)·1개(세로, 약 841×1210dp) 모두 지원 |
 | 앱 SDK | minSdk 28 / compileSdk 37 / targetSdk 36 |
-| Pleos SDK | Vehicle SDK `ai.pleos.playground:Vehicle:2.3.2` (Maven: `https://nexus-playground.pleos.ai/repository/maven-releases/`) |
+| Pleos SDK | Vehicle SDK `ai.pleos.playground:Vehicle:2.3.2`, NaviHelper SDK `ai.pleos.playground:NaviHelper:3.0.5` (Maven: `https://nexus-playground.pleos.ai/repository/maven-releases/`). 제출 앱이 쓰는 Pleos SDK는 이 2종이다 |
 | 사용 권한 | `pleos.car.permission.CAR_ENERGY`(배터리 잔량), `NAVI_ROUTE`(경로·ETA 조회), `NAVI_ROUTE_SEARCH`(정차지 경유지 등록). 운전 중 제한(CarUxRestrictions) 구독은 권한이 필요 없음 |
 | 차량 API | AAOS `android.car` (`useLibrary("android.car")`, Activity `distractionOptimized` 선언) |
 | 글꼴 | Asta Sans v1.000 (42dot, SIL OFL 1.1) 앱 내장 — 아래 "라이선스" 참고 |
@@ -179,6 +180,7 @@ adb logcat -s HmgApp
 | `CLAUDE.md` | `@AGENTS.md` import + Claude Code 전용 메모 |
 | `docs/guides/` | Pleos·Google 차량 가이드 요약(원문 URL 포함, 원문이 최종 기준) |
 | `docs/contest/rules.md` | 공모전 규칙·일정·제출물·심사 기준·제출 전 체크리스트 |
+| `docs/architecture.md` | 앱 구조·동작 흐름 설명서(2차 PT 기술 Q&A 대비) |
 | `.mcp.json` | Claude Code용 Context7 문서 MCP(원격 HTTP, `https://mcp.context7.com/mcp`) |
 | `.claude/settings.json` | Claude Code 공용 설정: SessionStart 훅(`scripts/setup.sh`), `context7` MCP 자동 승인 |
 | `.codex/config.toml` | Codex 프로젝트 설정: Context7 MCP, SessionStart 훅(`scripts/setup.sh`) |

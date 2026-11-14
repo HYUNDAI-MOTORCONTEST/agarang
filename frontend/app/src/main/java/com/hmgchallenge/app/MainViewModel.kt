@@ -28,6 +28,9 @@ import com.hmgchallenge.shared.facility.RouteAccessRepository
 import com.hmgchallenge.shared.facility.FacilityState
 import com.hmgchallenge.shared.facility.StopPlanner
 import com.hmgchallenge.shared.facility.StopCandidate
+import com.hmgchallenge.app.sdk.PleosSdk
+import com.hmgchallenge.app.sdk.PleosSdkCheck
+import com.hmgchallenge.app.sdk.SdkState
 import com.hmgchallenge.shared.journey.NavigationRepository
 import com.hmgchallenge.shared.journey.NavigationSource
 import java.io.File
@@ -74,6 +77,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 구독 비용이 작고, window 이동·포그라운드 복귀 직후에도 제한 상태가 바로 맞아야 하므로 STARTED 단위로 끊지 않는다.
     private val uxMonitor = UxRestrictionsMonitor(application)
     val uxRestrictions: StateFlow<UxRestrictionsState> = uxMonitor.state
+
+    // 개발 확인용 Pleos SDK 4종 연결 확인. 실제 구현은 src/debug, release는 빈 구현(src/release)이다.
+    private val sdkCheck = PleosSdkCheck(application, viewModelScope)
+    val sdkStates: StateFlow<Map<PleosSdk, SdkState>> = sdkCheck.state
 
     private val careRepository = CareRepository(AtomicCareRecordStore(File(application.filesDir, "care-record.json")))
     val careState = careRepository.state
@@ -157,6 +164,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         departure.load()
         if (!BuildConfig.BUNDLED_FACILITY_DATA) refreshHealth()
         initVehicleAndReadBattery()
+        if (BuildConfig.DEBUG) sdkCheck.start()
     }
 
     fun reloadCareRecords() {
@@ -340,6 +348,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         stopNavigation()
         uxMonitor.stop()
+        sdkCheck.release()
         try {
             vehicle?.getEvBattery()?.unregisterEvBatteryStateOfCharge(batteryListener)
         } catch (e: Throwable) {

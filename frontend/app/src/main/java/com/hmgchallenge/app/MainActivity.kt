@@ -5,9 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +16,6 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -30,18 +26,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModelProvider
 import com.hmgchallenge.app.departure.DepartureApp
 import com.hmgchallenge.app.driving.LocalUxRestrictions
 import com.hmgchallenge.app.driving.UxRestrictionsState
+import com.hmgchallenge.app.sdk.PleosSdk
+import com.hmgchallenge.app.sdk.SdkState
+import com.hmgchallenge.app.ui.components.PleosButton
 import com.hmgchallenge.app.ui.theme.PleosTheme
 import com.hmgchallenge.app.ui.theme.VehicleTheme
 import com.hmgchallenge.shared.HealthResponse
@@ -84,6 +81,7 @@ class MainActivity : ComponentActivity() {
                 val stopRequest by vm.navigation.stopRequest.collectAsStateWithLifecycle()
                 val facilities by vm.facilities.collectAsStateWithLifecycle()
                 val facilityAlert by vm.facilityAlert.collectAsStateWithLifecycle()
+                val sdkStates by vm.sdkStates.collectAsStateWithLifecycle()
                 CompositionLocalProvider(LocalUxRestrictions provides ux) {
                     DepartureApp(
                         state = departure,
@@ -102,6 +100,7 @@ class MainActivity : ComponentActivity() {
                                 facilities = facilities, facilityAlert = facilityAlert,
                                 onRefreshFacilities = vm::refreshFacilities, onToggleFacilityDemo = vm::toggleFacilityDemo,
                                 onDismissFacilityAlert = vm::dismissFacilityAlert, onSelectFacility = vm::prepareStopNavigation,
+                                sdkStates = sdkStates,
                             )
                         },
                     )
@@ -138,6 +137,7 @@ fun MainScreen(
     onToggleFacilityDemo: () -> Unit,
     onDismissFacilityAlert: () -> Unit,
     onSelectFacility: (StopCandidate) -> Unit,
+    sdkStates: Map<PleosSdk, SdkState> = emptyMap(),
 ) {
     val type = PleosTheme.typography
     val dimens = PleosTheme.dimens
@@ -180,6 +180,51 @@ fun MainScreen(
                 onAction = onRefreshBattery,
                 valueIsKeyMetric = true,
             )
+            // 개발 확인용: debug 빌드에서만 SDK 4종 연결 상태를 보인다(release는 확인 자체를 하지 않는다).
+            if (BuildConfig.DEBUG && sdkStates.isNotEmpty()) SdkStatusCard(sdkStates)
+        }
+    }
+}
+
+/** Pleos SDK 연결 상태(debug 전용). 주행 중에는 요약 한 줄(연결 수)만 보인다. */
+@Composable
+private fun SdkStatusCard(states: Map<PleosSdk, SdkState>) {
+    val restricted = LocalUxRestrictions.current.requiresDistractionOptimization
+    val type = PleosTheme.typography
+    val dimens = PleosTheme.dimens
+    val scheme = MaterialTheme.colorScheme
+    val ready = states.values.count { it == SdkState.Ready }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(PleosTheme.shapes.card)
+            .background(scheme.surfaceVariant)
+            .padding(horizontal = dimens.bannerHorizontalPadding, vertical = dimens.infoCardVerticalPadding),
+        verticalArrangement = Arrangement.spacedBy(dimens.microSpacing),
+    ) {
+        Text(text = stringResource(R.string.sdk_title), style = type.labelMedium, color = scheme.onSurfaceVariant, maxLines = 1)
+        Text(
+            text = stringResource(R.string.sdk_summary, ready, states.size),
+            style = type.bodyLargeStrong,
+            color = scheme.onSurface,
+            maxLines = 1,
+        )
+        if (!restricted) {
+            states.forEach { (sdk, s) ->
+                val text = when (s) {
+                    SdkState.Checking -> stringResource(R.string.sdk_checking)
+                    SdkState.Ready -> stringResource(R.string.sdk_ready)
+                    SdkState.Initialized -> stringResource(R.string.sdk_initialized)
+                    is SdkState.Failed -> stringResource(R.string.error_prefix) + ": " + s.reason
+                }
+                Text(
+                    text = "${sdk.label} · $text",
+                    style = type.bodyMedium,
+                    color = scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -298,48 +343,11 @@ private fun <T> InfoCard(
             }
         }
         Box(Modifier.width(dimens.sectionSpacing))
-        PleosFilledButton(
+        PleosButton(
             label = actionLabel,
             onClick = onAction,
             enabled = state !is LoadState.Loading, // BUTTON 문서: Loading 상태는 조작 불가
             modifier = Modifier.padding(end = dimens.bannerHorizontalPadding),
-        )
-    }
-}
-
-/**
- * Pleos Button(filled). 색: button_filled_enabled / button_filled_pressed 토큰(PleosColors).
- * - 누르는 즉시 pressed 색으로 바뀌어 0.25초 응답 기준을 지킨다(pleos-ui.md 1장). 물결(ripple) 애니메이션은 쓰지 않는다.
- * - 크기: 최소 높이 72dp(주요 버튼), 최소 너비 64dp — Pleos 수치 없음, Google car-app-quality UX-1(pleos-ui.md 10장).
- * - disabled: 바탕은 문서 토큰 button_filled_disabled(alpha_dark_50). 라벨은 문서에 없어 text_dark_tertiary를 쓴다(팀 판단,
- *   카드 위 대비 주간 4.98, 야간 5.60 — PleosRoles 표).
- */
-@Composable
-private fun PleosFilledButton(label: String, onClick: () -> Unit, enabled: Boolean, modifier: Modifier = Modifier) {
-    val colors = PleosTheme.colors
-    val dimens = PleosTheme.dimens
-    val shapes = PleosTheme.shapes
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val container = when {
-        !enabled -> colors.button_filled_disabled
-        pressed -> colors.button_filled_pressed
-        else -> colors.button_filled_enabled
-    }
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = dimens.touchMinSize, minHeight = dimens.buttonHeight)
-            .clip(shapes.control)
-            .background(container)
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = dimens.bannerHorizontalPadding),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            style = PleosTheme.typography.labelMedium,
-            color = if (enabled) colors.basic_00 else colors.text_dark_tertiary,
-            maxLines = 1,
         )
     }
 }
