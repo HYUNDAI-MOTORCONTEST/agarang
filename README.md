@@ -112,6 +112,7 @@ scripts/run-app.sh -Phmg.backendUrl=http://10.0.2.2:9090
 
 - 저장소 내 `apk/` 폴더: [`apk/아가랑_아가랑_release.apk`](apk/아가랑_아가랑_release.apk) (release 빌드, v2·v3 서명, 약 49MB)
 - GitHub 파일 크기 한도(100MB) 안이라 별도 Releases 링크는 쓰지 않습니다.
+- 이 APK는 커밋 `e03cc40` 시점의 소스로 빌드했습니다. 그 뒤 main에 들어간 공용 UI 컴포넌트·debug 전용 SDK 연결 확인 변경은 APK에 포함되지 않았습니다.
 
 ---
 
